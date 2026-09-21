@@ -80,6 +80,11 @@
         <p class="text-xs text-slate-300 mt-0.5">Interactive population hierarchy and kebele sampling visualizer</p>
     </div>
     <div class="flex gap-3 items-center">
+        <label class="cursor-pointer bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 py-2 rounded-lg shadow-md flex items-center gap-2 transition duration-200">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+            Upload Dataset
+            <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" class="hidden">
+        </label>
         <button id="resetZoom" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium px-3.5 py-2 rounded-lg border border-slate-700 transition duration-200">Reset View</button>
     </div>
 </header>
@@ -91,8 +96,8 @@
                 <div class="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-3 border border-indigo-100">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
                 </div>
-                <h3 class="text-base font-bold text-slate-800">Loading population dataset…</h3>
-                <p class="text-xs text-slate-500 mt-1">Reading population.xlsx from this website folder.</p>
+                <h3 class="text-base font-bold text-slate-800">No Dataset Loaded</h3>
+                <p class="text-xs text-slate-500 mt-1">Upload a CSV or Excel file to automatically construct and render the tree view.</p>
             </div>
         </div>
     </div>
@@ -122,6 +127,7 @@
     // Keep the filename unchanged when replacing the dataset: population.xlsx
     const DATASET_URL = './population.xlsx';
 
+    document.getElementById('fileInput').addEventListener('change', handleFileUpload);
     document.getElementById('resetZoom').addEventListener('click', () => {
         if (svg && zoom) svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity);
     });
@@ -150,13 +156,31 @@
             if (message) {
                 message.textContent =
                     `Could not automatically load population.xlsx. ${error.message} ` +
-                    'Make sure population.xlsx is beside BeGu.html, the filename matches exactly, and open the page through HTTP/HTTPS (not by double-clicking it).';
+                    'Make sure it is in the same folder and open this page through a web server.';
             }
         }
     }
 
     // Start loading as soon as the page is ready.
     loadDefaultDataset();
+
+    function handleFileUpload(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        const ext = file.name.split('.').pop().toLowerCase();
+        if (ext === 'csv') {
+            Papa.parse(file, { header: true, dynamicTyping: true, skipEmptyLines: true, complete: (res) => processData(res.data) });
+        } else if (['xlsx', 'xls'].includes(ext)) {
+            const reader = new FileReader();
+            reader.onload = (evt) => {
+                const data = new Uint8Array(evt.target.result);
+                const wb = XLSX.read(data, { type: 'array' });
+                const json = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+                processData(json);
+            };
+            reader.readAsArrayBuffer(file);
+        }
+    }
 
     function processData(rows) {
         if (!rows || rows.length === 0) return;
