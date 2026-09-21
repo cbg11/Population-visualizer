@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hierarchical Population Visualizer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        * { box-sizing: border-box; }
+        body { background: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        
+        .node { cursor: pointer; }
+        .node rect.card-bg { 
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1); 
+            rx: 10px; 
+            ry: 10px; 
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.06));
+        }
+        .node:hover rect.card-bg { 
+            stroke: #6366f1; 
+            stroke-width: 2px; 
+            filter: drop-shadow(0 10px 15px rgba(99,102,241,0.2)); 
+        }
+        
+        .link { fill: none; stroke: #94a3b8; stroke-width: 2; transition: stroke 0.25s; }
+        .link-sampled { stroke: #10b981 !important; stroke-width: 2px; stroke-dasharray: 5 5; }
+        
+        /* Main Woreda Table Styling */
+        .node-table { border-collapse: collapse; font-size: 10px; width: 100%; }
+        .node-table th { 
+            background-color: #334155; 
+            color: #f8fafc; 
+            font-weight: 600; 
+            padding: 6px 8px; 
+            text-align: left; 
+            letter-spacing: 0.02em;
+        }
+        .node-table td { 
+            padding: 6px 8px; 
+            border-bottom: 1px solid #e2e8f0; 
+            color: #1e293b; 
+            white-space: nowrap; 
+        }
+        .node-table tr:nth-child(even) { background-color: #f8fafc; }
+        .node-table tr:hover { background-color: #f1f5f9; }
+        .node-table tr.sampled-row { background-color: #cceede; font-weight: 600; }
+        .node-table tr.sampled-row:hover { background-color: #a4dcbf; }
+        .node-table tr.totals-row { background-color: #e2e8f0; font-weight: 700; border-top: 2px solid #94a3b8; }
+        
+        /* Kebele Table Styling */
+        .kebele-table { border-collapse: collapse; font-size: 9.5px; width: 100%; margin-top: 6px; }
+        .kebele-table th { 
+            background-color: #047857; 
+            color: #ffffff; 
+            font-weight: 600; 
+            padding: 5px 8px; 
+            text-align: left; 
+        }
+        .kebele-table td { 
+            padding: 5px 8px; 
+            border-bottom: 1px solid #d1fae5; 
+            color: #064e3b; 
+            white-space: nowrap; 
+        }
+        .kebele-table tr:nth-child(even) { background-color: #f0fdf4; }
+        .kebele-table tr:hover { background-color: #d1fae5; }
+        .kebele-table tr.totals-row { background-color: #a7f3d0; font-weight: 700; border-top: 2px solid #059669; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+<header class="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white px-8 py-4 flex items-center justify-between shadow-lg">
+    <div>
+        <h1 class="text-xl font-bold tracking-tight text-white flex items-center gap-2">
+            Region <span class="text-indigo-400">→</span> Zone <span class="text-indigo-400">→</span> Consolidated Woredas
+        </h1>
+        <p class="text-xs text-slate-300 mt-0.5">Interactive population hierarchy and kebele sampling visualizer</p>
+    </div>
+    <div class="flex gap-3 items-center">
+        <label class="cursor-pointer bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 py-2 rounded-lg shadow-md flex items-center gap-2 transition duration-200">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+            Upload Dataset
+            <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" class="hidden">
+        </label>
+        <button id="resetZoom" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium px-3.5 py-2 rounded-lg border border-slate-700 transition duration-200">Reset View</button>
+    </div>
+</header>
+
+<main class="flex-1 relative flex flex-col p-5">
+    <div id="treeContainer" class="w-full flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden" style="min-height: 72vh;">
+        <div id="placeholder" class="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div class="text-center p-8 border-2 border-dashed border-slate-300 rounded-3xl bg-slate-50/50 max-w-sm backdrop-blur-sm">
+                <div class="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-3 border border-indigo-100">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                </div>
+                <h3 class="text-base font-bold text-slate-800">No Dataset Loaded</h3>
+                <p class="text-xs text-slate-500 mt-1">Upload a CSV or Excel file to automatically construct and render the tree view.</p>
+            </div>
+        </div>
+    </div>
+</main>
+
+<script>
+    let svg, g, zoom, root, i = 0;
+    const duration = 350;
+
+    function formatNumber(num) {
+        if (num === undefined || num === null || num === '' || isNaN(num)) return num || '—';
+        return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    }
+
+    function toNumber(val) {
+        if (!val || isNaN(val)) return 0;
+        return Number(val);
+    }
+
+    function isValueValid(val) {
+        if (val === undefined || val === null) return false;
+        const str = String(val).trim().toLowerCase();
+        return str !== '' && str !== 'null' && str !== 'none' && str !== 'nan';
+    }
+
+    // Load the shared Excel dataset automatically from the same directory as BeGu.html.
+    // Keep the filename unchanged when replacing the dataset: population.xlsx
+    const DATASET_URL = './population.xlsx';
+
+    document.getElementById('fileInput').addEventListener('change', handleFileUpload);
+    document.getElementById('resetZoom').addEventListener('click', () => {
+        if (svg && zoom) svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity);
+    });
+
+    async function loadDefaultDataset() {
+        const placeholder = document.getElementById('placeholder');
+        try {
+            const response = await fetch(DATASET_URL, { cache: 'no-store' });
+            if (!response.ok) {
+                throw new Error(`Could not load ${DATASET_URL} (HTTP ${response.status}).`);
+            }
+
+            const buffer = await response.arrayBuffer();
+            const workbook = XLSX.read(buffer, { type: 'array' });
+            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+            const rows = XLSX.utils.sheet_to_json(firstSheet, { defval: '' });
+
+            if (!rows.length) {
+                throw new Error('The Excel file contains no data rows.');
+            }
+
+            processData(rows);
+        } catch (error) {
+            console.error('Automatic dataset loading failed:', error);
+            const message = placeholder.querySelector('p');
+            if (message) {
+                message.textContent =
+                    `Could not automatically load population.xlsx. ${error.message} ` +
+                    'Make sure it is in the same folder and open this page through a web server.';
+            }
+        }
+    }
+
+    // Start loading as soon as the page is ready.
+    loadDefaultDataset();
+
+    function handleFileUpload(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        const ext = file.name.split('.').pop().toLowerCase();
+        if (ext === 'csv') {
+            Papa.parse(file, { header: true, dynamicTyping: true, skipEmptyLines: true, complete: (res) => processData(res.data) });
+        } else if (['xlsx', 'xls'].includes(ext)) {
+            const reader = new FileReader();
+            reader.onload = (evt) => {
+                const data = new Uint8Array(evt.target.result);
+                const wb = XLSX.read(data, { type: 'array' });
+                const json = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+                processData(json);
+            };
+            reader.readAsArrayBuffer(file);
+        }
+    }
+
+    function processData(rows) {
+        if (!rows || rows.length === 0) return;
+
+        const regionMap = {};
+
+        rows.forEach(row => {
+            const region = row['Region'] || 'Unknown Region';
+            const zone = row['Zone'] || 'Unknown Zone';
+            const woreda = row['Woreda'] || 'Unknown Woreda';
+
+            if (!regionMap[region]) regionMap[region] = {};
+            if (!regionMap[region][zone]) regionMap[region][zone] = {};
+
+            const isSampled = isValueValid(row['Sampled Kebele']) || isValueValid(row['List of Seelcted Kebeles']) || isValueValid(row['List of Sampled Kebeles']);
+
+            if (!regionMap[region][zone][woreda]) {
+                regionMap[region][zone][woreda] = {
+                    woreda: woreda,
+                    mining: row['Mining'],
+                    sd: row['SD'],
+                    diversity: row['Diversity'],
+                    totalKebele: toNumber(row['Total Kebele']),
+                    population: toNumber(row['Population']),
+                    totalU5: toNumber(row['Total U5']),
+                    sampledKebele: toNumber(row['Sampled Kebele']),
+                    isSampled: false,
+                    sampledDetails: []
+                };
+            }
+
+            if (isSampled) {
+                regionMap[region][zone][woreda].isSampled = true;
+                regionMap[region][zone][woreda].sampledDetails.push({
+                    listOfKebeles: row['List of Sampled Kebeles'] || row['List of Seelcted Kebeles'],
+                    kebeleU5: toNumber(row['Kebele U5']),
+                    sampleSize: toNumber(row['Sample Size'])
+                });
+            }
+        });
+
+        const regionKeys = Object.keys(regionMap);
+
+        const buildZoneNode = (zName, zWoredas) => {
+            const woredaList = Object.values(zWoredas);
+            const sampledChildren = [];
+
+            // Totals calculation for Zone level (Woredas & Kebeles)
+            const totalWoredas = woredaList.length;
+            const selectedWoredas = woredaList.filter(w => w.isSampled).length;
+            const totalKebeles = woredaList.reduce((acc, w) => acc + w.totalKebele, 0);
+            const selectedKebeles = woredaList.reduce((acc, w) => acc + w.sampledKebele, 0);
+
+            woredaList.forEach(wRecord => {
+                if (wRecord.isSampled && wRecord.sampledDetails.length > 0) {
+                    sampledChildren.push({
+                        name: wRecord.woreda,
+                        type: 'sampled-leaf',
+                        items: wRecord.sampledDetails
+                    });
+                }
+            });
+
+            const tableNode = {
+                name: `Woredas List (${zName})`,
+                type: 'woreda-table-node',
+                rows: woredaList,
+                children: sampledChildren.length > 0 ? sampledChildren : null
+            };
+
+            return {
+                name: zName,
+                type: 'zone',
+                summary: {
+                    totalWoredas,
+                    selectedWoredas,
+                    totalKebeles,
+                    selectedKebeles
+                },
+                children: [tableNode]
+            };
+        };
+
+        const buildRegionNode = (rName) => {
+            const zones = Object.keys(regionMap[rName]).map(zName => buildZoneNode(zName, regionMap[rName][zName]));
+            
+            // Totals calculation for Region level (summed across all zones)
+            let totalWoredas = 0, selectedWoredas = 0, totalKebeles = 0, selectedKebeles = 0;
+            zones.forEach(z => {
+                totalWoredas += z.summary.totalWoredas;
+                selectedWoredas += z.summary.selectedWoredas;
+                totalKebeles += z.summary.totalKebeles;
+                selectedKebeles += z.summary.selectedKebeles;
+            });
+
+            return {
+                name: rName,
+                type: 'region',
+                summary: {
+                    totalWoredas,
+                    selectedWoredas,
+                    totalKebeles,
+                    selectedKebeles
+                },
+                children: zones
+            };
+        };
+
+        let rootData = regionKeys.length === 1 
+            ? buildRegionNode(regionKeys[0]) 
+            : { name: "All Regions", type: 'root', children: regionKeys.map(buildRegionNode) };
+
+        document.getElementById('placeholder').style.display = 'none';
+        renderTree(rootData);
+    }
+
+    function getNodeSize(d) {
+        if (d.data.type === 'woreda-table-node') {
+            const rowCount = d.data.rows.length + 1; // Includes summary row
+            const width = 760;
+            const height = 50 + (rowCount * 28) + (d.data.children || d._children ? 36 : 0);
+            return { width, height };
+        }
+        if (d.data.type === 'sampled-leaf') {
+            const itemCount = d.data.items.length + 1; // Includes summary row
+            const width = 300;
+            const height = 65 + (itemCount * 28);
+            return { width, height };
+        }
+        if (d.data.type === 'zone') {
+            return { width: 220, height: 68 };
+        }
+        if (d.data.type === 'region') {
+            return { width: 340, height: 95 };
+        }
+        return { width: 220, height: 50 };
+    }
+
+    function collapse(d) {
+        if (d.children) {
+            d._children = d.children;
+            d._children.forEach(collapse);
+            d.children = null;
+        }
+    }
+
+    function renderTree(data) {
+        d3.select("#treeContainer").select("svg").remove();
+
+        const container = document.getElementById('treeContainer');
+        const width = container.clientWidth || 1000;
+        const height = container.clientHeight || 750;
+
+        zoom = d3.zoom().scaleExtent([0.15, 3]).on('zoom', (e) => g.attr('transform', e.transform));
+
+        svg = d3.select("#treeContainer")
+            .append("svg")
+            .attr("width", width)
+            .attr("height", height)
+            .call(zoom)
+            .append("g");
+
+        g = svg.append("g").attr("transform", `translate(${width / 2}, 50)`);
+
+        root = d3.hierarchy(data, d => d.children);
+        root.x0 = 0; root.y0 = 0;
+
+        if (root.children) {
+            root.children.forEach(collapse);
+        }
+
+        update(root);
+    }
+
+    function update(source) {
+        const treeLayout = d3.tree().nodeSize([380, 100]);
+        const treeData = treeLayout(root);
+        const nodes = treeData.descendants();
+        const links = treeData.links();
+
+        nodes.forEach(d => {
+            if (d.depth === 0) {
+                d.y = 0;
+            } else {
+                const parentSize = getNodeSize(d.parent);
+                d.y = d.parent.y + parentSize.height + 65;
+            }
+        });
+
+        // NODES
+        const node = g.selectAll('g.node')
+            .data(nodes, d => d.id || (d.id = ++i));
+
+        const nodeEnter = node.enter().append('g')
+            .attr('class', 'node')
+            .attr('transform', d => `translate(${source.x0},${source.y0})`)
+            .on('click', (event, d) => {
+                if (d.children) {
+                    d._children = d.children;
+                    d.children = null;
+                } else if (d._children) {
+                    d.children = d._children;
+                    d._children = null;
+                } else {
+                    return;
+                }
+                update(d);
+            });
+
+        nodeEnter.each(function(d) {
+            const group = d3.select(this);
+            const { width: cardWidth, height: cardHeight } = getNodeSize(d);
+
+            let headerBg = '#4f46e5', cardBg = '#ffffff';
+            if (d.data.type === 'region') headerBg = '#4338ca';
+            if (d.data.type === 'zone') headerBg = '#0284c7';
+            if (d.data.type === 'woreda-table-node') headerBg = '#334155';
+            if (d.data.type === 'sampled-leaf') { headerBg = '#10b981'; cardBg = '#f0fdf4'; }
+
+            // Card BG
+            group.append('rect')
+                .attr('class', 'card-bg')
+                .attr('x', -cardWidth/2)
+                .attr('y', 0)
+                .attr('width', cardWidth)
+                .attr('height', cardHeight)
+                .attr('fill', cardBg)
+                .attr('stroke', '#cbd5e1')
+                .attr('stroke-width', 1);
+
+            // Colored Header Line
+            group.append('rect')
+                .attr('x', -cardWidth/2)
+                .attr('y', 0)
+                .attr('width', cardWidth)
+                .attr('height', 5)
+                .attr('rx', 2)
+                .attr('fill', headerBg);
+
+            if (d.data.type === 'region') {
+                const fo = group.append('foreignObject')
+                    .attr('x', -cardWidth/2)
+                    .attr('y', 5)
+                    .attr('width', cardWidth)
+                    .attr('height', cardHeight - 5);
+
+                const div = fo.append('xhtml:div')
+                    .style('width', '100%')
+                    .style('height', '100%')
+                    .style('padding', '8px 12px')
+                    .style('text-align', 'center');
+
+                const s = d.data.summary;
+                div.html(`
+                    <div class="font-bold text-sm text-slate-800">${d.data.name} ${d._children ? '▶' : ''}</div>
+                    <div class="grid grid-cols-2 gap-1.5 mt-2 text-[10.5px]">
+                        <div class="bg-indigo-50 border border-indigo-200 rounded py-1 px-1.5 text-indigo-900">
+                            <strong>Woredas:</strong> ${formatNumber(s.selectedWoredas)} / ${formatNumber(s.totalWoredas)}
+                        </div>
+                        <div class="bg-emerald-50 border border-emerald-200 rounded py-1 px-1.5 text-emerald-900">
+                            <strong>Kebeles:</strong> ${formatNumber(s.selectedKebeles)} / ${formatNumber(s.totalKebeles)}
+                        </div>
+                    </div>
+                `);
+
+            } else if (d.data.type === 'zone') {
+                const fo = group.append('foreignObject')
+                    .attr('x', -cardWidth/2)
+                    .attr('y', 5)
+                    .attr('width', cardWidth)
+                    .attr('height', cardHeight - 5);
+
+                const div = fo.append('xhtml:div')
+                    .style('width', '100%')
+                    .style('height', '100%')
+                    .style('padding', '8px 12px')
+                    .style('text-align', 'center');
+
+                const s = d.data.summary;
+                div.html(`
+                    <div class="font-bold text-sm text-slate-800">${d.data.name} ${d._children ? '▶' : ''}</div>
+                    <div class="mt-1.5 inline-block bg-sky-50 border border-sky-200 rounded py-0.5 px-2 text-[10.5px] text-sky-900">
+                        <strong>Woredas:</strong> ${formatNumber(s.selectedWoredas)} / ${formatNumber(s.totalWoredas)}
+                    </div>
+                `);
+
+            } else if (d.data.type === 'woreda-table-node') {
+                const fo = group.append('foreignObject')
+                    .attr('x', -cardWidth/2)
+                    .attr('y', 5)
+                    .attr('width', cardWidth)
+                    .attr('height', cardHeight - 5);
+
+                const div = fo.append('xhtml:div')
+                    .style('width', '100%')
+                    .style('height', '100%')
+                    .style('overflow', 'hidden')
+                    .style('padding', '10px 12px');
+
+                let tableHtml = `
+                    <table class="node-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 28px; text-align: center;">#</th>
+                                <th>Woreda</th>
+                                <th>Mining</th>
+                                <th>SD</th>
+                                <th>Diversity</th>
+                                <th>Kebele</th>
+                                <th>Population</th>
+                                <th>Total U5</th>
+                                <th>Selected Kebele</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+
+                let totKebele = 0, totPop = 0, totU5 = 0, totSelectedKebele = 0;
+
+                d.data.rows.forEach((r, idx) => {
+                    totKebele += toNumber(r.totalKebele);
+                    totPop += toNumber(r.population);
+                    totU5 += toNumber(r.totalU5);
+                    totSelectedKebele += toNumber(r.sampledKebele);
+
+                    const rowClass = r.isSampled ? 'sampled-row' : '';
+                    tableHtml += `
+                        <tr class="${rowClass}">
+                            <td style="text-align: center; color: #64748b; font-weight: 600;">${idx + 1}</td>
+                            <td>${r.woreda} ${r.isSampled ? '<span style="color:#10b981">★</span>' : ''}</td>
+                            <td>${r.mining || '—'}</td>
+                            <td>${r.sd || '—'}</td>
+                            <td>${r.diversity || '—'}</td>
+                            <td>${formatNumber(r.totalKebele)}</td>
+                            <td>${formatNumber(r.population)}</td>
+                            <td>${formatNumber(r.totalU5)}</td>
+                            <td>${formatNumber(r.sampledKebele)}</td>
+                        </tr>
+                    `;
+                });
+
+                // Summary Total Row for Woredas
+                tableHtml += `
+                    <tr class="totals-row">
+                        <td style="text-align: center;">-</td>
+                        <td colspan="4">Total (${d.data.rows.length} Woredas)</td>
+                        <td>${formatNumber(totKebele)}</td>
+                        <td>${formatNumber(totPop)}</td>
+                        <td>${formatNumber(totU5)}</td>
+                        <td>${formatNumber(totSelectedKebele)}</td>
+                    </tr>
+                `;
+
+                tableHtml += `</tbody></table>`;
+
+                if (d.data.children || d._children) {
+                    tableHtml += `
+                        <div class="text-center py-1.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-[10px] font-bold rounded-lg mt-2 shadow-sm transition">
+                            ${d.children ? '▼ Showing Selected Kebeles' : '▶ Click Node to Expand Selected Kebeles'}
+                        </div>
+                    `;
+                }
+
+                div.html(tableHtml);
+
+            } else if (d.data.type === 'sampled-leaf') {
+                const fo = group.append('foreignObject')
+                    .attr('x', -cardWidth/2)
+                    .attr('y', 5)
+                    .attr('width', cardWidth)
+                    .attr('height', cardHeight - 5);
+
+                const div = fo.append('xhtml:div')
+                    .style('width', '100%')
+                    .style('height', '100%')
+                    .style('padding', '8px 10px')
+                    .style('overflow', 'visible');
+
+                let totalU5 = 0, totalSample = 0;
+
+                let kebeleHtml = `
+                    <div class="text-center font-bold text-emerald-900 text-xs mb-1 tracking-tight flex items-center justify-center gap-1.5">
+                        <span>${d.data.name}</span>
+                        <span class="text-[9px] bg-emerald-200 text-emerald-800 px-1.5 py-0.5 rounded-full font-semibold">Randomly Selected</span>
+                    </div>
+                    <table class="kebele-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 24px; text-align: center;">#</th>
+                                <th>List of Kebeles</th>
+                                <th>Kebele U5</th>
+                                <th>Sample</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+
+                d.data.items.forEach((item, idx) => {
+                    totalU5 += toNumber(item.kebeleU5);
+                    totalSample += toNumber(item.sampleSize);
+                    kebeleHtml += `
+                        <tr>
+                            <td style="text-align: center; color: #047857; font-weight: 600;">${idx + 1}</td>
+                            <td class="font-medium">${item.listOfKebeles || '—'}</td>
+                            <td>${formatNumber(item.kebeleU5)}</td>
+                            <td class="font-semibold text-emerald-700">${formatNumber(item.sampleSize)}</td>
+                        </tr>
+                    `;
+                });
+
+                // Summary Total Row for Kebeles
+                kebeleHtml += `
+                    <tr class="totals-row">
+                        <td style="text-align: center;">-</td>
+                        <td>Total (${d.data.items.length})</td>
+                        <td>${formatNumber(totalU5)}</td>
+                        <td>${formatNumber(totalSample)}</td>
+                    </tr>
+                `;
+
+                kebeleHtml += `</tbody></table>`;
+                div.html(kebeleHtml);
+
+            } else {
+                group.append('text')
+                    .attr('x', 0)
+                    .attr('y', 28)
+                    .attr('text-anchor', 'middle')
+                    .style('font-size', '12px')
+                    .style('font-weight', '700')
+                    .style('fill', '#1e293b')
+                    .text(`${d.data.name} ${d._children ? '▶' : ''}`);
+            }
+        });
+
+        const nodeUpdate = nodeEnter.merge(node);
+        nodeUpdate.transition().duration(duration).attr('transform', d => `translate(${d.x},${d.y})`);
+
+        const nodeExit = node.exit().transition().duration(duration)
+            .attr('transform', d => `translate(${source.x},${source.y})`)
+            .remove();
+        nodeExit.style('opacity', 0);
+
+        // LINKS
+        const link = g.selectAll('path.link')
+            .data(links, d => d.target.id);
+
+        const linkEnter = link.enter().insert('path', "g")
+            .attr('class', 'link')
+            .attr('d', d => {
+                const o = { x: source.x0, y: source.y0 };
+                return `M ${o.x} ${o.y} C ${o.x} ${o.y}, ${o.x} ${o.y}, ${o.x} ${o.y}`;
+            });
+
+        const linkUpdate = linkEnter.merge(link);
+        linkUpdate.transition().duration(duration)
+            .attr('d', d => {
+                const sourceH = getNodeSize(d.source).height;
+                const sx = d.source.x, sy = d.source.y + sourceH;
+                const tx = d.target.x, ty = d.target.y;
+                return `M ${sx} ${sy} C ${sx} ${(sy + ty)/2}, ${tx} ${(sy + ty)/2}, ${tx} ${ty}`;
+            })
+            .attr('class', d => d.target.data.type === 'sampled-leaf' ? 'link link-sampled' : 'link');
+
+        link.exit().transition().duration(duration)
+            .attr('d', d => {
+                const o = { x: source.x, y: source.y };
+                return `M ${o.x} ${o.y} C ${o.x} ${o.y}, ${o.x} ${o.y}, ${o.x} ${o.y}`;
+            })
+            .remove();
+
+        nodes.forEach(d => { d.x0 = d.x; d.y0 = d.y; });
+    }
+</script>
+</body>
+</html>
