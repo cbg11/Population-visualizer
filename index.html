@@ -27,7 +27,6 @@
         
         .link { fill: none; stroke: #94a3b8; stroke-width: 2; transition: stroke 0.25s; }
         .link-sampled { stroke: #10b981 !important; stroke-width: 2px; stroke-dasharray: 5 5; }
-        .link-aggregate { stroke: #059669 !important; stroke-width: 2.5px; stroke-dasharray: 3 3; }
         
         /* Main Woreda Table Styling */
         .node-table { border-collapse: collapse; font-size: 10px; width: 100%; }
@@ -69,12 +68,6 @@
         .kebele-table tr:nth-child(even) { background-color: #f0fdf4; }
         .kebele-table tr:hover { background-color: #d1fae5; }
         .kebele-table tr.totals-row { background-color: #a7f3d0; font-weight: 700; border-top: 2px solid #059669; }
-
-        /* Summary Node Styling */
-        .summary-table { border-collapse: collapse; font-size: 9.5px; width: 100%; margin-top: 6px; }
-        .summary-table th { background-color: #065f46; color: #ffffff; font-weight: 600; padding: 5px 8px; text-align: left; }
-        .summary-table td { padding: 5px 8px; border-bottom: 1px solid #a7f3d0; color: #064e3b; white-space: nowrap; }
-        .summary-table tr:nth-child(even) { background-color: #ecfdf5; }
     </style>
 </head>
 <body class="min-h-screen flex flex-col">
@@ -106,7 +99,7 @@
 </main>
 
 <script>
-    let svg, g, aggregateG, zoom, root, i = 0;
+    let svg, g, zoom, root, i = 0;
     const duration = 350;
 
     function formatNumber(num) {
@@ -213,12 +206,18 @@
             const totalKebeles = woredaList.reduce((acc, w) => acc + w.totalKebele, 0);
             const selectedKebeles = woredaList.reduce((acc, w) => acc + w.sampledKebele, 0);
 
+            let zoneSampleSize = 0;
+
             woredaList.forEach(wRecord => {
                 if (wRecord.isSampled && wRecord.sampledDetails.length > 0) {
+                    const leafSampleSize = wRecord.sampledDetails.reduce((acc, d) => acc + d.sampleSize, 0);
+                    zoneSampleSize += leafSampleSize;
+
                     sampledChildren.push({
                         name: wRecord.woreda,
                         type: 'sampled-leaf',
-                        items: wRecord.sampledDetails
+                        items: wRecord.sampledDetails,
+                        sampleSize: leafSampleSize
                     });
                 }
             });
@@ -227,6 +226,7 @@
                 name: `Woredas List (${zName})`,
                 type: 'woreda-table-node',
                 rows: woredaList,
+                sampleSize: zoneSampleSize,
                 children: sampledChildren.length > 0 ? sampledChildren : null
             };
 
@@ -237,7 +237,8 @@
                     totalWoredas,
                     selectedWoredas,
                     totalKebeles,
-                    selectedKebeles
+                    selectedKebeles,
+                    totalSampleSize: zoneSampleSize
                 },
                 children: [tableNode]
             };
@@ -246,12 +247,13 @@
         const buildRegionNode = (rName) => {
             const zones = Object.keys(regionMap[rName]).map(zName => buildZoneNode(zName, regionMap[rName][zName]));
             
-            let totalWoredas = 0, selectedWoredas = 0, totalKebeles = 0, selectedKebeles = 0;
+            let totalWoredas = 0, selectedWoredas = 0, totalKebeles = 0, selectedKebeles = 0, totalSampleSize = 0;
             zones.forEach(z => {
                 totalWoredas += z.summary.totalWoredas;
                 selectedWoredas += z.summary.selectedWoredas;
                 totalKebeles += z.summary.totalKebeles;
                 selectedKebeles += z.summary.selectedKebeles;
+                totalSampleSize += z.summary.totalSampleSize;
             });
 
             return {
@@ -261,15 +263,41 @@
                     totalWoredas,
                     selectedWoredas,
                     totalKebeles,
-                    selectedKebeles
+                    selectedKebeles,
+                    totalSampleSize
                 },
                 children: zones
             };
         };
 
-        let rootData = regionKeys.length === 1 
-            ? buildRegionNode(regionKeys[0]) 
-            : { name: "All Regions", type: 'root', children: regionKeys.map(buildRegionNode) };
+        let rootData;
+        if (regionKeys.length === 1) {
+            rootData = buildRegionNode(regionKeys[0]);
+        } else {
+            const regionNodes = regionKeys.map(buildRegionNode);
+            let grandTotalWoredas = 0, grandSelectedWoredas = 0, grandTotalKebeles = 0, grandSelectedKebeles = 0, grandTotalSampleSize = 0;
+
+            regionNodes.forEach(r => {
+                grandTotalWoredas += r.summary.totalWoredas;
+                grandSelectedWoredas += r.summary.selectedWoredas;
+                grandTotalKebeles += r.summary.totalKebeles;
+                grandSelectedKebeles += r.summary.selectedKebeles;
+                grandTotalSampleSize += r.summary.totalSampleSize;
+            });
+
+            rootData = {
+                name: "All Regions Overview",
+                type: 'root',
+                summary: {
+                    totalWoredas: grandTotalWoredas,
+                    selectedWoredas: grandSelectedWoredas,
+                    totalKebeles: grandTotalKebeles,
+                    selectedKebeles: grandSelectedKebeles,
+                    totalSampleSize: grandTotalSampleSize
+                },
+                children: regionNodes
+            };
+        }
 
         document.getElementById('placeholder').style.display = 'none';
         renderTree(rootData);
@@ -278,23 +306,23 @@
     function getNodeSize(d) {
         if (d.data.type === 'woreda-table-node') {
             const rowCount = d.data.rows.length + 1;
-            const width = 760;
+            const width = 800;
             const height = 50 + (rowCount * 28) + (d.data.children || d._children ? 36 : 0);
             return { width, height };
         }
         if (d.data.type === 'sampled-leaf') {
             const itemCount = d.data.items.length + 1;
-            const width = 300;
+            const width = 310;
             const height = 65 + (itemCount * 28);
             return { width, height };
         }
         if (d.data.type === 'zone') {
-            return { width: 220, height: 68 };
+            return { width: 280, height: 95 };
         }
-        if (d.data.type === 'region') {
-            return { width: 340, height: 95 };
+        if (d.data.type === 'region' || d.data.type === 'root') {
+            return { width: 360, height: 115 };
         }
-        return { width: 220, height: 50 };
+        return { width: 240, height: 60 };
     }
 
     function collapse(d) {
@@ -322,7 +350,6 @@
             .append("g");
 
         g = svg.append("g").attr("transform", `translate(${width / 2}, 50)`);
-        aggregateG = g.append("g").attr("class", "aggregate-layer");
 
         root = d3.hierarchy(data, d => d.children);
         root.x0 = 0; root.y0 = 0;
@@ -335,7 +362,7 @@
     }
 
     function update(source) {
-        const treeLayout = d3.tree().nodeSize([380, 100]);
+        const treeLayout = d3.tree().nodeSize([400, 100]);
         const treeData = treeLayout(root);
         const nodes = treeData.descendants();
         const links = treeData.links();
@@ -374,7 +401,7 @@
             const { width: cardWidth, height: cardHeight } = getNodeSize(d);
 
             let headerBg = '#4f46e5', cardBg = '#ffffff';
-            if (d.data.type === 'region') headerBg = '#4338ca';
+            if (d.data.type === 'root' || d.data.type === 'region') headerBg = '#4338ca';
             if (d.data.type === 'zone') headerBg = '#0284c7';
             if (d.data.type === 'woreda-table-node') headerBg = '#334155';
             if (d.data.type === 'sampled-leaf') { headerBg = '#10b981'; cardBg = '#f0fdf4'; }
@@ -399,7 +426,7 @@
                 .attr('rx', 2)
                 .attr('fill', headerBg);
 
-            if (d.data.type === 'region') {
+            if (d.data.type === 'region' || d.data.type === 'root') {
                 const fo = group.append('foreignObject')
                     .attr('x', -cardWidth/2)
                     .attr('y', 5)
@@ -413,15 +440,19 @@
                     .style('text-align', 'center');
 
                 const s = d.data.summary;
+                const isRoot = d.data.type === 'root';
                 div.html(`
                     <div class="font-bold text-sm text-slate-800">${d.data.name} ${d._children ? '▶' : ''}</div>
-                    <div class="grid grid-cols-2 gap-1.5 mt-2 text-[10.5px]">
+                    <div class="grid grid-cols-2 gap-1.5 mt-1.5 text-[10px]">
                         <div class="bg-indigo-50 border border-indigo-200 rounded py-1 px-1.5 text-indigo-900">
                             <strong>Woredas:</strong> ${formatNumber(s.selectedWoredas)} / ${formatNumber(s.totalWoredas)}
                         </div>
                         <div class="bg-emerald-50 border border-emerald-200 rounded py-1 px-1.5 text-emerald-900">
                             <strong>Kebeles:</strong> ${formatNumber(s.selectedKebeles)} / ${formatNumber(s.totalKebeles)}
                         </div>
+                    </div>
+                    <div class="mt-1.5 bg-emerald-600 text-white rounded py-1 px-2 text-[10.5px] font-bold shadow-sm">
+                        ${isRoot ? 'Grand Total Sample Size:' : 'Total Sample Size:'} ${formatNumber(s.totalSampleSize)}
                     </div>
                 `);
 
@@ -441,8 +472,11 @@
                 const s = d.data.summary;
                 div.html(`
                     <div class="font-bold text-sm text-slate-800">${d.data.name} ${d._children ? '▶' : ''}</div>
-                    <div class="mt-1.5 inline-block bg-sky-50 border border-sky-200 rounded py-0.5 px-2 text-[10.5px] text-sky-900">
+                    <div class="mt-1 inline-block bg-sky-50 border border-sky-200 rounded py-0.5 px-2 text-[10px] text-sky-900">
                         <strong>Woredas:</strong> ${formatNumber(s.selectedWoredas)} / ${formatNumber(s.totalWoredas)}
+                    </div>
+                    <div class="mt-1.5 bg-emerald-100 border border-emerald-300 text-emerald-900 rounded py-1 px-2 text-[10px] font-bold">
+                        Zone Total Sample Size: ${formatNumber(s.totalSampleSize)}
                     </div>
                 `);
 
@@ -504,7 +538,7 @@
                 tableHtml += `
                     <tr class="totals-row">
                         <td style="text-align: center;">-</td>
-                        <td colspan="4">Total (${d.data.rows.length} Woredas)</td>
+                        <td colspan="4">Total (${d.data.rows.length} Woredas) — <span style="color:#047857; font-weight:800;">Sample Size Total: ${formatNumber(d.data.sampleSize)}</span></td>
                         <td>${formatNumber(totKebele)}</td>
                         <td>${formatNumber(totPop)}</td>
                         <td>${formatNumber(totU5)}</td>
@@ -574,7 +608,7 @@
                         <td style="text-align: center;">-</td>
                         <td>Total (${d.data.items.length})</td>
                         <td>${formatNumber(totalU5)}</td>
-                        <td>${formatNumber(totalSample)}</td>
+                        <td class="text-emerald-900 font-extrabold">${formatNumber(totalSample)}</td>
                     </tr>
                 `;
 
@@ -630,137 +664,6 @@
             .remove();
 
         nodes.forEach(d => { d.x0 = d.x; d.y0 = d.y; });
-
-        // AGGREGATE NODE & CONNECTIONS FOR SAMPLED LEAVES
-        renderAggregateNode(nodes, source);
-    }
-
-    function renderAggregateNode(nodes, source) {
-        const sampledLeaves = nodes.filter(d => d.data.type === 'sampled-leaf');
-
-        if (sampledLeaves.length === 0) {
-            aggregateG.selectAll("*").remove();
-            return;
-        }
-
-        let totalOverallSampleSize = 0;
-        const leafSummaries = sampledLeaves.map(leaf => {
-            const leafSampleSize = leaf.data.items.reduce((acc, item) => acc + toNumber(item.sampleSize), 0);
-            totalOverallSampleSize += leafSampleSize;
-            return {
-                woredaName: leaf.data.name,
-                sampleSize: leafSampleSize,
-                leafNode: leaf
-            };
-        });
-
-        const aggWidth = 380;
-        const aggHeight = 70 + (leafSummaries.length * 24);
-
-        const avgX = d3.mean(sampledLeaves, d => d.x);
-        const maxBottomY = d3.max(sampledLeaves, d => d.y + getNodeSize(d).height);
-        const aggY = maxBottomY + 90;
-
-        let summaryNode = aggregateG.select('g.summary-node');
-        if (summaryNode.empty()) {
-            summaryNode = aggregateG.append('g')
-                .attr('class', 'summary-node')
-                .attr('transform', `translate(${source.x0}, ${source.y0})`);
-
-            summaryNode.append('rect')
-                .attr('class', 'card-bg')
-                .attr('fill', '#ecfdf5')
-                .attr('stroke', '#059669')
-                .attr('stroke-width', 2);
-
-            summaryNode.append('rect')
-                .attr('class', 'header-bar')
-                .attr('fill', '#047857')
-                .attr('rx', 2);
-
-            summaryNode.append('foreignObject').attr('class', 'fo-content');
-        }
-
-        summaryNode.transition().duration(duration)
-            .attr('transform', `translate(${avgX}, ${aggY})`);
-
-        summaryNode.select('rect.card-bg')
-            .attr('x', -aggWidth / 2)
-            .attr('y', 0)
-            .attr('width', aggWidth)
-            .attr('height', aggHeight);
-
-        summaryNode.select('rect.header-bar')
-            .attr('x', -aggWidth / 2)
-            .attr('y', 0)
-            .attr('width', aggWidth)
-            .attr('height', 5);
-
-        let tableRows = leafSummaries.map((s, idx) => `
-            <tr>
-                <td style="text-align: center; color: #047857; font-weight: 600;">${idx + 1}</td>
-                <td>${s.woredaName}</td>
-                <td style="text-align: right; font-weight: 700; color: #047857;">${formatNumber(s.sampleSize)}</td>
-            </tr>
-        `).join('');
-
-        const contentHtml = `
-            <div style="width: 100%; height: 100%; padding: 10px 12px; overflow: hidden;">
-                <div class="text-center font-bold text-emerald-950 text-xs tracking-tight flex items-center justify-center gap-1.5">
-                    <span>Total Sample Size Summary</span>
-                    <span class="text-[9px] bg-emerald-200 text-emerald-900 px-1.5 py-0.5 rounded-full font-semibold">Aggregated</span>
-                </div>
-                <table class="summary-table">
-                    <thead>
-                        <tr>
-                            <th style="width: 24px; text-align: center;">#</th>
-                            <th>Sampled Woreda Leaf</th>
-                            <th style="text-align: right;">Sample Size</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${tableRows}
-                        <tr style="background-color: #a7f3d0; font-weight: 800; border-top: 2px solid #059669; color: #064e3b;">
-                            <td style="text-align: center;">-</td>
-                            <td>Grand Total Sample Size</td>
-                            <td style="text-align: right; font-size: 11px;">${formatNumber(totalOverallSampleSize)}</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        `;
-
-        summaryNode.select('foreignObject.fo-content')
-            .attr('x', -aggWidth / 2)
-            .attr('y', 5)
-            .attr('width', aggWidth)
-            .attr('height', aggHeight - 5)
-            .html(contentHtml);
-
-        // LINKS FROM LEAVES TO SUMMARY NODE
-        const aggLinks = aggregateG.selectAll('path.link-aggregate')
-            .data(leafSummaries, d => d.woredaName);
-
-        const aggLinksEnter = aggLinks.enter().append('path')
-            .attr('class', 'link link-aggregate')
-            .attr('d', d => {
-                const leafH = getNodeSize(d.leafNode).height;
-                const sx = d.leafNode.x, sy = d.leafNode.y + leafH;
-                return `M ${sx} ${sy} C ${sx} ${sy}, ${sx} ${sy}, ${sx} ${sy}`;
-            });
-
-        aggLinksEnter.merge(aggLinks)
-            .transition().duration(duration)
-            .attr('d', d => {
-                const leafH = getNodeSize(d.leafNode).height;
-                const sx = d.leafNode.x, sy = d.leafNode.y + leafH;
-                const tx = avgX, ty = aggY;
-                return `M ${sx} ${sy} C ${sx} ${(sy + ty)/2}, ${tx} ${(sy + ty)/2}, ${tx} ${ty}`;
-            });
-
-        aggLinks.exit().transition().duration(duration)
-            .attr('d', () => `M ${avgX} ${aggY} C ${avgX} ${aggY}, ${avgX} ${aggY}, ${avgX} ${aggY}`)
-            .remove();
     }
 </script>
 </body>
