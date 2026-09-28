@@ -75,7 +75,7 @@
 <header class="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white px-8 py-4 flex items-center justify-between shadow-lg">
     <div>
         <h1 class="text-xl font-bold tracking-tight text-white flex items-center gap-2">
-            Region <span class="text-indigo-400">→</span> Zone <span class="text-indigo-400">→</span> Mining Status <span class="text-indigo-400">→</span> Consolidated Woredas
+            Region <span class="text-indigo-400">→</span> Zone <span class="text-indigo-400">→</span> Consolidated Woredas
         </h1>
         <p class="text-xs text-slate-300 mt-0.5">Interactive population hierarchy and kebele sampling visualizer</p>
     </div>
@@ -148,7 +148,7 @@
             if (message) {
                 message.textContent =
                     `Could not automatically load population.xlsx. ${error.message} ` +
-                    'Make sure population.xlsx is beside index.html, the filename matches exactly, and open the page through HTTP/HTTPS.';
+                    'Make sure population.xlsx is beside BeGu.html, the filename matches exactly, and open the page through HTTP/HTTPS (not by double-clicking it).';
             }
         }
     }
@@ -158,25 +158,22 @@
     function processData(rows) {
         if (!rows || rows.length === 0) return;
 
-        // Structure: Region -> Zone -> MiningType -> Woreda
         const regionMap = {};
 
         rows.forEach(row => {
             const region = row['Region'] || 'Unknown Region';
             const zone = row['Zone'] || 'Unknown Zone';
-            const mining = (row['Mining'] && String(row['Mining']).trim()) ? String(row['Mining']).trim() : 'Unknown Mining';
             const woreda = row['Woreda'] || 'Unknown Woreda';
 
             if (!regionMap[region]) regionMap[region] = {};
             if (!regionMap[region][zone]) regionMap[region][zone] = {};
-            if (!regionMap[region][zone][mining]) regionMap[region][zone][mining] = {};
 
             const isSampled = isValueValid(row['Sampled Kebele']) || isValueValid(row['List of Seelcted Kebeles']) || isValueValid(row['List of Sampled Kebeles']);
 
-            if (!regionMap[region][zone][mining][woreda]) {
-                regionMap[region][zone][mining][woreda] = {
+            if (!regionMap[region][zone][woreda]) {
+                regionMap[region][zone][woreda] = {
                     woreda: woreda,
-                    mining: mining,
+                    mining: row['Mining'],
                     sd: row['SD'],
                     diversity: row['Diversity'],
                     totalKebele: toNumber(row['Total Kebele']),
@@ -189,8 +186,8 @@
             }
 
             if (isSampled) {
-                regionMap[region][zone][mining][woreda].isSampled = true;
-                regionMap[region][zone][mining][woreda].sampledDetails.push({
+                regionMap[region][zone][woreda].isSampled = true;
+                regionMap[region][zone][woreda].sampledDetails.push({
                     listOfKebeles: row['List of Sampled Kebeles'] || row['List of Seelcted Kebeles'],
                     kebeleU5: toNumber(row['Kebele U5']),
                     sampleSize: toNumber(row['Sample Size'])
@@ -200,8 +197,8 @@
 
         const regionKeys = Object.keys(regionMap);
 
-        const buildMiningNode = (mName, mWoredas, zName) => {
-            const woredaList = Object.values(mWoredas);
+        const buildZoneNode = (zName, zWoredas) => {
+            const woredaList = Object.values(zWoredas);
             const sampledChildren = [];
 
             const totalWoredas = woredaList.length;
@@ -209,12 +206,12 @@
             const totalKebeles = woredaList.reduce((acc, w) => acc + w.totalKebele, 0);
             const selectedKebeles = woredaList.reduce((acc, w) => acc + w.sampledKebele, 0);
 
-            let miningSampleSize = 0;
+            let zoneSampleSize = 0;
 
             woredaList.forEach(wRecord => {
                 if (wRecord.isSampled && wRecord.sampledDetails.length > 0) {
                     const leafSampleSize = wRecord.sampledDetails.reduce((acc, d) => acc + d.sampleSize, 0);
-                    miningSampleSize += leafSampleSize;
+                    zoneSampleSize += leafSampleSize;
 
                     sampledChildren.push({
                         name: wRecord.woreda,
@@ -226,39 +223,12 @@
             });
 
             const tableNode = {
-                name: `Woredas List (${zName} - ${mName})`,
+                name: `Woredas List (${zName})`,
                 type: 'woreda-table-node',
                 rows: woredaList,
-                sampleSize: miningSampleSize,
+                sampleSize: zoneSampleSize,
                 children: sampledChildren.length > 0 ? sampledChildren : null
             };
-
-            return {
-                name: mName,
-                type: 'mining',
-                summary: {
-                    totalWoredas,
-                    selectedWoredas,
-                    totalKebeles,
-                    selectedKebeles,
-                    totalSampleSize: miningSampleSize
-                },
-                children: [tableNode]
-            };
-        };
-
-        const buildZoneNode = (zName, zMinings) => {
-            const miningKeys = Object.keys(zMinings);
-            const miningNodes = miningKeys.map(mName => buildMiningNode(mName, zMinings[mName], zName));
-
-            let totalWoredas = 0, selectedWoredas = 0, totalKebeles = 0, selectedKebeles = 0, zoneSampleSize = 0;
-            miningNodes.forEach(m => {
-                totalWoredas += m.summary.totalWoredas;
-                selectedWoredas += m.summary.selectedWoredas;
-                totalKebeles += m.summary.totalKebeles;
-                selectedKebeles += m.summary.selectedKebeles;
-                zoneSampleSize += m.summary.totalSampleSize;
-            });
 
             return {
                 name: zName,
@@ -270,7 +240,7 @@
                     selectedKebeles,
                     totalSampleSize: zoneSampleSize
                 },
-                children: miningNodes
+                children: [tableNode]
             };
         };
 
@@ -346,9 +316,6 @@
             const height = 65 + (itemCount * 28);
             return { width, height };
         }
-        if (d.data.type === 'mining') {
-            return { width: 250, height: 90 };
-        }
         if (d.data.type === 'zone') {
             return { width: 280, height: 95 };
         }
@@ -395,7 +362,7 @@
     }
 
     function update(source) {
-        const treeLayout = d3.tree().nodeSize([420, 100]);
+        const treeLayout = d3.tree().nodeSize([400, 100]);
         const treeData = treeLayout(root);
         const nodes = treeData.descendants();
         const links = treeData.links();
@@ -436,7 +403,6 @@
             let headerBg = '#4f46e5', cardBg = '#ffffff';
             if (d.data.type === 'root' || d.data.type === 'region') headerBg = '#4338ca';
             if (d.data.type === 'zone') headerBg = '#0284c7';
-            if (d.data.type === 'mining') headerBg = '#d97706';
             if (d.data.type === 'woreda-table-node') headerBg = '#334155';
             if (d.data.type === 'sampled-leaf') { headerBg = '#10b981'; cardBg = '#f0fdf4'; }
 
@@ -511,30 +477,6 @@
                     </div>
                     <div class="mt-1.5 bg-emerald-100 border border-emerald-300 text-emerald-900 rounded py-1 px-2 text-[10px] font-bold">
                         Zone Total Sample Size: ${formatNumber(s.totalSampleSize)}
-                    </div>
-                `);
-
-            } else if (d.data.type === 'mining') {
-                const fo = group.append('foreignObject')
-                    .attr('x', -cardWidth/2)
-                    .attr('y', 5)
-                    .attr('width', cardWidth)
-                    .attr('height', cardHeight - 5);
-
-                const div = fo.append('xhtml:div')
-                    .style('width', '100%')
-                    .style('height', '100%')
-                    .style('padding', '8px 12px')
-                    .style('text-align', 'center');
-
-                const s = d.data.summary;
-                div.html(`
-                    <div class="font-bold text-xs text-amber-900 uppercase tracking-wide">Mining: ${d.data.name} ${d._children ? '▶' : ''}</div>
-                    <div class="mt-1 text-[10px] text-amber-800">
-                        <strong>Woredas:</strong> ${formatNumber(s.selectedWoredas)} / ${formatNumber(s.totalWoredas)}
-                    </div>
-                    <div class="mt-1 bg-amber-100 border border-amber-300 text-amber-900 rounded py-0.5 px-1.5 text-[9.5px] font-bold">
-                        Sample Size: ${formatNumber(s.totalSampleSize)}
                     </div>
                 `);
 
