@@ -75,9 +75,9 @@
 <header class="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white px-8 py-4 flex items-center justify-between shadow-lg">
     <div>
         <h1 class="text-xl font-bold tracking-tight text-white flex items-center gap-2">
-            Region <span class="text-indigo-400">→</span> Zone <span class="text-indigo-400">→</span> Mining Status <span class="text-indigo-400">→</span> Woredas & Kebele Leaf Summaries
+            Region <span class="text-indigo-400">→</span> Zone <span class="text-indigo-400">→</span> Mining Status <span class="text-indigo-400">→</span> Consolidated Woredas
         </h1>
-        <p class="text-xs text-slate-300 mt-0.5">Interactive population hierarchy with leaf-level aggregated summaries</p>
+        <p class="text-xs text-slate-300 mt-0.5">Interactive population hierarchy and kebele sampling visualizer</p>
     </div>
     <div class="flex gap-3 items-center">
         <button id="resetZoom" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium px-3.5 py-2 rounded-lg border border-slate-700 transition duration-200">Reset View</button>
@@ -158,6 +158,7 @@
     function processData(rows) {
         if (!rows || rows.length === 0) return;
 
+        // Structure: Region -> Zone -> MiningType -> Woreda
         const regionMap = {};
 
         rows.forEach(row => {
@@ -203,6 +204,11 @@
             const woredaList = Object.values(mWoredas);
             const sampledChildren = [];
 
+            const totalWoredas = woredaList.length;
+            const selectedWoredas = woredaList.filter(w => w.isSampled).length;
+            const totalKebeles = woredaList.reduce((acc, w) => acc + w.totalKebele, 0);
+            const selectedKebeles = woredaList.reduce((acc, w) => acc + w.sampledKebele, 0);
+
             let miningSampleSize = 0;
 
             woredaList.forEach(wRecord => {
@@ -230,6 +236,13 @@
             return {
                 name: mName,
                 type: 'mining',
+                summary: {
+                    totalWoredas,
+                    selectedWoredas,
+                    totalKebeles,
+                    selectedKebeles,
+                    totalSampleSize: miningSampleSize
+                },
                 children: [tableNode]
             };
         };
@@ -238,18 +251,51 @@
             const miningKeys = Object.keys(zMinings);
             const miningNodes = miningKeys.map(mName => buildMiningNode(mName, zMinings[mName], zName));
 
+            let totalWoredas = 0, selectedWoredas = 0, totalKebeles = 0, selectedKebeles = 0, zoneSampleSize = 0;
+            miningNodes.forEach(m => {
+                totalWoredas += m.summary.totalWoredas;
+                selectedWoredas += m.summary.selectedWoredas;
+                totalKebeles += m.summary.totalKebeles;
+                selectedKebeles += m.summary.selectedKebeles;
+                zoneSampleSize += m.summary.totalSampleSize;
+            });
+
             return {
                 name: zName,
                 type: 'zone',
+                summary: {
+                    totalWoredas,
+                    selectedWoredas,
+                    totalKebeles,
+                    selectedKebeles,
+                    totalSampleSize: zoneSampleSize
+                },
                 children: miningNodes
             };
         };
 
         const buildRegionNode = (rName) => {
             const zones = Object.keys(regionMap[rName]).map(zName => buildZoneNode(zName, regionMap[rName][zName]));
+            
+            let totalWoredas = 0, selectedWoredas = 0, totalKebeles = 0, selectedKebeles = 0, totalSampleSize = 0;
+            zones.forEach(z => {
+                totalWoredas += z.summary.totalWoredas;
+                selectedWoredas += z.summary.selectedWoredas;
+                totalKebeles += z.summary.totalKebeles;
+                selectedKebeles += z.summary.selectedKebeles;
+                totalSampleSize += z.summary.totalSampleSize;
+            });
+
             return {
                 name: rName,
                 type: 'region',
+                summary: {
+                    totalWoredas,
+                    selectedWoredas,
+                    totalKebeles,
+                    selectedKebeles,
+                    totalSampleSize
+                },
                 children: zones
             };
         };
@@ -258,10 +304,28 @@
         if (regionKeys.length === 1) {
             rootData = buildRegionNode(regionKeys[0]);
         } else {
+            const regionNodes = regionKeys.map(buildRegionNode);
+            let grandTotalWoredas = 0, grandSelectedWoredas = 0, grandTotalKebeles = 0, grandSelectedKebeles = 0, grandTotalSampleSize = 0;
+
+            regionNodes.forEach(r => {
+                grandTotalWoredas += r.summary.totalWoredas;
+                grandSelectedWoredas += r.summary.selectedWoredas;
+                grandTotalKebeles += r.summary.totalKebeles;
+                grandSelectedKebeles += r.summary.selectedKebeles;
+                grandTotalSampleSize += r.summary.totalSampleSize;
+            });
+
             rootData = {
                 name: "All Regions Overview",
                 type: 'root',
-                children: regionKeys.map(buildRegionNode)
+                summary: {
+                    totalWoredas: grandTotalWoredas,
+                    selectedWoredas: grandSelectedWoredas,
+                    totalKebeles: grandTotalKebeles,
+                    selectedKebeles: grandSelectedKebeles,
+                    totalSampleSize: grandTotalSampleSize
+                },
+                children: regionNodes
             };
         }
 
@@ -272,26 +336,26 @@
     function getNodeSize(d) {
         if (d.data.type === 'woreda-table-node') {
             const rowCount = d.data.rows.length + 1;
-            const width = 820;
+            const width = 800;
             const height = 50 + (rowCount * 28) + (d.data.children || d._children ? 36 : 0);
             return { width, height };
         }
         if (d.data.type === 'sampled-leaf') {
             const itemCount = d.data.items.length + 1;
-            const width = 340;
+            const width = 310;
             const height = 65 + (itemCount * 28);
             return { width, height };
         }
         if (d.data.type === 'mining') {
-            return { width: 220, height: 50 };
+            return { width: 250, height: 90 };
         }
         if (d.data.type === 'zone') {
-            return { width: 240, height: 55 };
+            return { width: 280, height: 95 };
         }
         if (d.data.type === 'region' || d.data.type === 'root') {
-            return { width: 280, height: 60 };
+            return { width: 360, height: 115 };
         }
-        return { width: 220, height: 50 };
+        return { width: 240, height: 60 };
     }
 
     function collapse(d) {
@@ -331,7 +395,7 @@
     }
 
     function update(source) {
-        const treeLayout = d3.tree().nodeSize([440, 90]);
+        const treeLayout = d3.tree().nodeSize([420, 100]);
         const treeData = treeLayout(root);
         const nodes = treeData.descendants();
         const links = treeData.links();
@@ -341,7 +405,7 @@
                 d.y = 0;
             } else {
                 const parentSize = getNodeSize(d.parent);
-                d.y = d.parent.y + parentSize.height + 55;
+                d.y = d.parent.y + parentSize.height + 65;
             }
         });
 
@@ -396,7 +460,7 @@
                 .attr('rx', 2)
                 .attr('fill', headerBg);
 
-            if (d.data.type === 'region' || d.data.type === 'root' || d.data.type === 'zone' || d.data.type === 'mining') {
+            if (d.data.type === 'region' || d.data.type === 'root') {
                 const fo = group.append('foreignObject')
                     .attr('x', -cardWidth/2)
                     .attr('y', 5)
@@ -406,14 +470,71 @@
                 const div = fo.append('xhtml:div')
                     .style('width', '100%')
                     .style('height', '100%')
-                    .style('padding', '6px 10px')
+                    .style('padding', '8px 12px')
                     .style('text-align', 'center');
 
-                let titlePrefix = d.data.type === 'mining' ? 'Mining Branch: ' : '';
+                const s = d.data.summary;
+                const isRoot = d.data.type === 'root';
                 div.html(`
-                    <div class="font-bold text-xs text-slate-800 flex items-center justify-center gap-1 h-full">
-                        <span>${titlePrefix}${d.data.name}</span>
-                        <span class="text-indigo-600">${d._children ? '▶' : ''}</span>
+                    <div class="font-bold text-sm text-slate-800">${d.data.name} ${d._children ? '▶' : ''}</div>
+                    <div class="grid grid-cols-2 gap-1.5 mt-1.5 text-[10px]">
+                        <div class="bg-indigo-50 border border-indigo-200 rounded py-1 px-1.5 text-indigo-900">
+                            <strong>Woredas:</strong> ${formatNumber(s.selectedWoredas)} / ${formatNumber(s.totalWoredas)}
+                        </div>
+                        <div class="bg-emerald-50 border border-emerald-200 rounded py-1 px-1.5 text-emerald-900">
+                            <strong>Kebeles:</strong> ${formatNumber(s.selectedKebeles)} / ${formatNumber(s.totalKebeles)}
+                        </div>
+                    </div>
+                    <div class="mt-1.5 bg-emerald-600 text-white rounded py-1 px-2 text-[10.5px] font-bold shadow-sm">
+                        ${isRoot ? 'Grand Total Sample Size:' : 'Total Sample Size:'} ${formatNumber(s.totalSampleSize)}
+                    </div>
+                `);
+
+            } else if (d.data.type === 'zone') {
+                const fo = group.append('foreignObject')
+                    .attr('x', -cardWidth/2)
+                    .attr('y', 5)
+                    .attr('width', cardWidth)
+                    .attr('height', cardHeight - 5);
+
+                const div = fo.append('xhtml:div')
+                    .style('width', '100%')
+                    .style('height', '100%')
+                    .style('padding', '8px 12px')
+                    .style('text-align', 'center');
+
+                const s = d.data.summary;
+                div.html(`
+                    <div class="font-bold text-sm text-slate-800">${d.data.name} ${d._children ? '▶' : ''}</div>
+                    <div class="mt-1 inline-block bg-sky-50 border border-sky-200 rounded py-0.5 px-2 text-[10px] text-sky-900">
+                        <strong>Woredas:</strong> ${formatNumber(s.selectedWoredas)} / ${formatNumber(s.totalWoredas)}
+                    </div>
+                    <div class="mt-1.5 bg-emerald-100 border border-emerald-300 text-emerald-900 rounded py-1 px-2 text-[10px] font-bold">
+                        Zone Total Sample Size: ${formatNumber(s.totalSampleSize)}
+                    </div>
+                `);
+
+            } else if (d.data.type === 'mining') {
+                const fo = group.append('foreignObject')
+                    .attr('x', -cardWidth/2)
+                    .attr('y', 5)
+                    .attr('width', cardWidth)
+                    .attr('height', cardHeight - 5);
+
+                const div = fo.append('xhtml:div')
+                    .style('width', '100%')
+                    .style('height', '100%')
+                    .style('padding', '8px 12px')
+                    .style('text-align', 'center');
+
+                const s = d.data.summary;
+                div.html(`
+                    <div class="font-bold text-xs text-amber-900 uppercase tracking-wide">${d.data.name} ${d._children ? '▶' : ''}</div>
+                    <div class="mt-1 text-[10px] text-amber-800">
+                        <strong>Woredas:</strong> ${formatNumber(s.selectedWoredas)} / ${formatNumber(s.totalWoredas)}
+                    </div>
+                    <div class="mt-1 bg-amber-100 border border-amber-300 text-amber-900 rounded py-0.5 px-1.5 text-[9.5px] font-bold">
+                        Sample Size: ${formatNumber(s.totalSampleSize)}
                     </div>
                 `);
 
@@ -436,7 +557,7 @@
                             <tr>
                                 <th style="width: 28px; text-align: center;">#</th>
                                 <th>Woreda</th>
-                                <th>Mining</th>
+                                <th>Mining Status</th>
                                 <th>SD</th>
                                 <th>Diversity</th>
                                 <th>Kebele</th>
@@ -448,14 +569,13 @@
                         <tbody>
                 `;
 
-                let totKebele = 0, totPop = 0, totU5 = 0, totSelectedKebele = 0, selectedWoredaCount = 0;
+                let totKebele = 0, totPop = 0, totU5 = 0, totSelectedKebele = 0;
 
                 d.data.rows.forEach((r, idx) => {
                     totKebele += toNumber(r.totalKebele);
                     totPop += toNumber(r.population);
                     totU5 += toNumber(r.totalU5);
                     totSelectedKebele += toNumber(r.sampledKebele);
-                    if (r.isSampled) selectedWoredaCount++;
 
                     const rowClass = r.isSampled ? 'sampled-row' : '';
                     tableHtml += `
@@ -475,12 +595,12 @@
 
                 tableHtml += `
                     <tr class="totals-row">
-                        <td style="text-align: center;">★</td>
-                        <td colspan="4">Leaf Aggregated Totals (${d.data.rows.length} Woredas, ${selectedWoredaCount} Selected)</td>
+                        <td style="text-align: center;">-</td>
+                        <td colspan="4">Total (${d.data.rows.length} Woredas) — <span style="color:#047857; font-weight:800;">Sample Size Total: ${formatNumber(d.data.sampleSize)}</span></td>
                         <td>${formatNumber(totKebele)}</td>
                         <td>${formatNumber(totPop)}</td>
                         <td>${formatNumber(totU5)}</td>
-                        <td><span style="color:#047857; font-weight:800;">Selected: ${formatNumber(totSelectedKebele)}</span></td>
+                        <td>${formatNumber(totSelectedKebele)}</td>
                     </tr>
                 `;
 
@@ -489,7 +609,7 @@
                 if (d.data.children || d._children) {
                     tableHtml += `
                         <div class="text-center py-1.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-[10px] font-bold rounded-lg mt-2 shadow-sm transition">
-                            ${d.children ? '▼ Showing Kebeles & Leaf Sample Totals' : '▶ Click Node to Expand Selected Kebeles'}
+                            ${d.children ? '▼ Showing Selected Kebeles' : '▶ Click Node to Expand Selected Kebeles'}
                         </div>
                     `;
                 }
@@ -522,7 +642,7 @@
                                 <th style="width: 24px; text-align: center;">#</th>
                                 <th>List of Kebeles</th>
                                 <th>Kebele U5</th>
-                                <th>Sample Size</th>
+                                <th>Sample</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -544,7 +664,7 @@
                 kebeleHtml += `
                     <tr class="totals-row">
                         <td style="text-align: center;">-</td>
-                        <td>Leaf Sum (${d.data.items.length} Kebeles)</td>
+                        <td>Total (${d.data.items.length})</td>
                         <td>${formatNumber(totalU5)}</td>
                         <td class="text-emerald-900 font-extrabold">${formatNumber(totalSample)}</td>
                     </tr>
