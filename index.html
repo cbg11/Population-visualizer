@@ -27,7 +27,8 @@
         
         .link { fill: none; stroke: #94a3b8; stroke-width: 2; transition: stroke 0.25s; }
         .link-sampled { stroke: #10b981 !important; stroke-width: 2px; stroke-dasharray: 5 5; }
-        .link-grand { stroke: #059669 !important; stroke-width: 2.5px; stroke-dasharray: 4 4; }
+        .total-node-label { font-weight: 800; }
+
         
         /* Main Woreda Table Styling */
         .node-table { border-collapse: collapse; font-size: 10px; width: 100%; }
@@ -76,7 +77,7 @@
 <header class="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white px-8 py-4 flex items-center justify-between shadow-lg">
     <div>
         <h1 class="text-xl font-bold tracking-tight text-white flex items-center gap-2">
-            Region <span class="text-indigo-400">→</span> Zone <span class="text-indigo-400">→</span> Consolidated Woredas
+            Region <span class="text-indigo-400">→</span> Zone <span class="text-indigo-400">→</span> Mining Status <span class="text-indigo-400">→</span> Consolidated Woredas
         </h1>
         <p class="text-xs text-slate-300 mt-0.5">Interactive population hierarchy and kebele sampling visualizer</p>
     </div>
@@ -100,7 +101,7 @@
 </main>
 
 <script>
-    let svg, g, grandG, zoom, root, i = 0;
+    let svg, g, zoom, root, i = 0;
     const duration = 350;
 
     function formatNumber(num) {
@@ -149,7 +150,7 @@
             if (message) {
                 message.textContent =
                     `Could not automatically load population.xlsx. ${error.message} ` +
-                    'Make sure population.xlsx is beside BeGu.html, the filename matches exactly, and open the page through HTTP/HTTPS (not by double-clicking it).';
+                    'Make sure population.xlsx is beside index.html, the filename matches exactly, and open the page through HTTP/HTTPS.';
             }
         }
     }
@@ -159,22 +160,25 @@
     function processData(rows) {
         if (!rows || rows.length === 0) return;
 
+        // Structure: Region -> Zone -> MiningType -> Woreda
         const regionMap = {};
 
         rows.forEach(row => {
             const region = row['Region'] || 'Unknown Region';
             const zone = row['Zone'] || 'Unknown Zone';
+            const mining = (row['Mining'] && String(row['Mining']).trim()) ? String(row['Mining']).trim() : 'Unknown Mining';
             const woreda = row['Woreda'] || 'Unknown Woreda';
 
             if (!regionMap[region]) regionMap[region] = {};
             if (!regionMap[region][zone]) regionMap[region][zone] = {};
+            if (!regionMap[region][zone][mining]) regionMap[region][zone][mining] = {};
 
             const isSampled = isValueValid(row['Sampled Kebele']) || isValueValid(row['List of Seelcted Kebeles']) || isValueValid(row['List of Sampled Kebeles']);
 
-            if (!regionMap[region][zone][woreda]) {
-                regionMap[region][zone][woreda] = {
+            if (!regionMap[region][zone][mining][woreda]) {
+                regionMap[region][zone][mining][woreda] = {
                     woreda: woreda,
-                    mining: row['Mining'],
+                    mining: mining,
                     sd: row['SD'],
                     diversity: row['Diversity'],
                     totalKebele: toNumber(row['Total Kebele']),
@@ -187,8 +191,8 @@
             }
 
             if (isSampled) {
-                regionMap[region][zone][woreda].isSampled = true;
-                regionMap[region][zone][woreda].sampledDetails.push({
+                regionMap[region][zone][mining][woreda].isSampled = true;
+                regionMap[region][zone][mining][woreda].sampledDetails.push({
                     listOfKebeles: row['List of Sampled Kebeles'] || row['List of Seelcted Kebeles'],
                     kebeleU5: toNumber(row['Kebele U5']),
                     sampleSize: toNumber(row['Sample Size'])
@@ -198,8 +202,21 @@
 
         const regionKeys = Object.keys(regionMap);
 
-        const buildZoneNode = (zName, zWoredas) => {
-            const woredaList = Object.values(zWoredas);
+        // Total nodes are intentionally separate from their parent nodes.
+        // This makes every level a "children + total" branch:
+        // Region -> Zones -> Region Total
+        // Zone -> Mining Types -> Zone Total
+        // Mining -> Woreda Table -> Mining Total
+        // Root -> Regions -> Grand Total
+        const makeTotalNode = (name, summary, level = 'total') => ({
+            name,
+            type: level === 'grand-total' ? 'grand-total' : 'total',
+            summary: { ...summary },
+            children: null
+        });
+
+        const buildMiningNode = (mName, mWoredas, zName) => {
+            const woredaList = Object.values(mWoredas);
             const sampledChildren = [];
 
             const totalWoredas = woredaList.length;
@@ -207,74 +224,155 @@
             const totalKebeles = woredaList.reduce((acc, w) => acc + w.totalKebele, 0);
             const selectedKebeles = woredaList.reduce((acc, w) => acc + w.sampledKebele, 0);
 
+            let miningSampleSize = 0;
+
             woredaList.forEach(wRecord => {
                 if (wRecord.isSampled && wRecord.sampledDetails.length > 0) {
                     const leafSampleSize = wRecord.sampledDetails.reduce((acc, d) => acc + d.sampleSize, 0);
-
-                    // Add dedicated Sample Size leaf node under each sampled kebele leaf
-                    const sampleSizeNode = {
-                        name: `${wRecord.woreda} Sample Size`,
-                        type: 'sample-node',
-                        sampleSize: leafSampleSize
-                    };
+                    miningSampleSize += leafSampleSize;
 
                     sampledChildren.push({
                         name: wRecord.woreda,
                         type: 'sampled-leaf',
                         items: wRecord.sampledDetails,
-                        sampleSize: leafSampleSize,
-                        children: [sampleSizeNode]
+                        sampleSize: leafSampleSize
                     });
                 }
             });
 
+            const summary = {
+                totalWoredas,
+                selectedWoredas,
+                totalKebeles,
+                selectedKebeles,
+                totalSampleSize: miningSampleSize
+            };
+
             const tableNode = {
-                name: `Woredas List (${zName})`,
+                name: `Woredas List (${zName} - ${mName})`,
                 type: 'woreda-table-node',
                 rows: woredaList,
+                sampleSize: miningSampleSize,
                 children: sampledChildren.length > 0 ? sampledChildren : null
             };
+
+            const totalNode = makeTotalNode(
+                `${mName} Total`,
+                summary,
+                'total'
+            );
+
+            return {
+                name: mName,
+                type: 'mining',
+                summary,
+                children: [tableNode, totalNode]
+            };
+        };
+
+        const buildZoneNode = (zName, zMinings) => {
+            const miningKeys = Object.keys(zMinings);
+            const miningNodes = miningKeys.map(mName => buildMiningNode(mName, zMinings[mName], zName));
+
+            let totalWoredas = 0, selectedWoredas = 0, totalKebeles = 0, selectedKebeles = 0, zoneSampleSize = 0;
+            miningNodes.forEach(m => {
+                totalWoredas += m.summary.totalWoredas;
+                selectedWoredas += m.summary.selectedWoredas;
+                totalKebeles += m.summary.totalKebeles;
+                selectedKebeles += m.summary.selectedKebeles;
+                zoneSampleSize += m.summary.totalSampleSize;
+            });
+
+            const summary = {
+                totalWoredas,
+                selectedWoredas,
+                totalKebeles,
+                selectedKebeles,
+                totalSampleSize: zoneSampleSize
+            };
+
+            miningNodes.push(
+                makeTotalNode(`${zName} Total`, summary, 'total')
+            );
 
             return {
                 name: zName,
                 type: 'zone',
-                summary: {
-                    totalWoredas,
-                    selectedWoredas,
-                    totalKebeles,
-                    selectedKebeles
-                },
-                children: [tableNode]
+                summary,
+                children: miningNodes
             };
         };
 
         const buildRegionNode = (rName) => {
-            const zones = Object.keys(regionMap[rName]).map(zName => buildZoneNode(zName, regionMap[rName][zName]));
-            
-            let totalWoredas = 0, selectedWoredas = 0, totalKebeles = 0, selectedKebeles = 0;
+            const zones = Object.keys(regionMap[rName]).map(
+                zName => buildZoneNode(zName, regionMap[rName][zName])
+            );
+
+            let totalWoredas = 0, selectedWoredas = 0, totalKebeles = 0, selectedKebeles = 0, totalSampleSize = 0;
             zones.forEach(z => {
                 totalWoredas += z.summary.totalWoredas;
                 selectedWoredas += z.summary.selectedWoredas;
                 totalKebeles += z.summary.totalKebeles;
                 selectedKebeles += z.summary.selectedKebeles;
+                totalSampleSize += z.summary.totalSampleSize;
             });
+
+            const summary = {
+                totalWoredas,
+                selectedWoredas,
+                totalKebeles,
+                selectedKebeles,
+                totalSampleSize
+            };
+
+            zones.push(
+                makeTotalNode(`${rName} Total`, summary, 'total')
+            );
 
             return {
                 name: rName,
                 type: 'region',
-                summary: {
-                    totalWoredas,
-                    selectedWoredas,
-                    totalKebeles,
-                    selectedKebeles
-                },
+                summary,
                 children: zones
             };
         };
 
-        let rootData = regionKeys.length === 1 
-            ? buildRegionNode(regionKeys[0]) 
-            : { name: "All Regions Overview", type: 'root', children: regionKeys.map(buildRegionNode) };
+        const regionKeys = Object.keys(regionMap);
+
+        let rootData;
+        if (regionKeys.length === 1) {
+            rootData = buildRegionNode(regionKeys[0]);
+        } else {
+            const regionNodes = regionKeys.map(buildRegionNode);
+            let grandTotalWoredas = 0, grandSelectedWoredas = 0, grandTotalKebeles = 0, grandSelectedKebeles = 0, grandTotalSampleSize = 0;
+
+            regionNodes.forEach(r => {
+                grandTotalWoredas += r.summary.totalWoredas;
+                grandSelectedWoredas += r.summary.selectedWoredas;
+                grandTotalKebeles += r.summary.totalKebeles;
+                grandSelectedKebeles += r.summary.selectedKebeles;
+                grandTotalSampleSize += r.summary.totalSampleSize;
+            });
+
+            const grandSummary = {
+                totalWoredas: grandTotalWoredas,
+                selectedWoredas: grandSelectedWoredas,
+                totalKebeles: grandTotalKebeles,
+                selectedKebeles: grandSelectedKebeles,
+                totalSampleSize: grandTotalSampleSize
+            };
+
+            regionNodes.push(
+                makeTotalNode('Grand Total', grandSummary, 'grand-total')
+            );
+
+            rootData = {
+                name: "All Regions Overview",
+                type: 'root',
+                summary: grandSummary,
+                children: regionNodes
+            };
+        }
 
         document.getElementById('placeholder').style.display = 'none';
         renderTree(rootData);
@@ -283,26 +381,29 @@
     function getNodeSize(d) {
         if (d.data.type === 'woreda-table-node') {
             const rowCount = d.data.rows.length + 1;
-            const width = 760;
+            const width = 800;
             const height = 50 + (rowCount * 28) + (d.data.children || d._children ? 36 : 0);
             return { width, height };
         }
         if (d.data.type === 'sampled-leaf') {
             const itemCount = d.data.items.length + 1;
-            const width = 300;
+            const width = 310;
             const height = 65 + (itemCount * 28);
             return { width, height };
         }
-        if (d.data.type === 'sample-node') {
-            return { width: 180, height: 50 };
+        if (d.data.type === 'mining') {
+            return { width: 250, height: 90 };
         }
         if (d.data.type === 'zone') {
-            return { width: 220, height: 68 };
+            return { width: 280, height: 95 };
         }
-        if (d.data.type === 'region') {
-            return { width: 340, height: 95 };
+        if (d.data.type === 'region' || d.data.type === 'root') {
+            return { width: 360, height: 115 };
         }
-        return { width: 220, height: 50 };
+        if (d.data.type === 'total' || d.data.type === 'grand-total') {
+            return { width: 310, height: 105 };
+        }
+        return { width: 240, height: 60 };
     }
 
     function collapse(d) {
@@ -330,7 +431,6 @@
             .append("g");
 
         g = svg.append("g").attr("transform", `translate(${width / 2}, 50)`);
-        grandG = g.append("g").attr("class", "grand-total-layer");
 
         root = d3.hierarchy(data, d => d.children);
         root.x0 = 0; root.y0 = 0;
@@ -343,7 +443,7 @@
     }
 
     function update(source) {
-        const treeLayout = d3.tree().nodeSize([380, 100]);
+        const treeLayout = d3.tree().nodeSize([420, 120]);
         const treeData = treeLayout(root);
         const nodes = treeData.descendants();
         const links = treeData.links();
@@ -382,11 +482,13 @@
             const { width: cardWidth, height: cardHeight } = getNodeSize(d);
 
             let headerBg = '#4f46e5', cardBg = '#ffffff';
-            if (d.data.type === 'region') headerBg = '#4338ca';
+            if (d.data.type === 'root' || d.data.type === 'region') headerBg = '#4338ca';
             if (d.data.type === 'zone') headerBg = '#0284c7';
+            if (d.data.type === 'mining') headerBg = '#d97706';
             if (d.data.type === 'woreda-table-node') headerBg = '#334155';
+            if (d.data.type === 'total') { headerBg = '#059669'; cardBg = '#f0fdf4'; }
+            if (d.data.type === 'grand-total') { headerBg = '#4f46e5'; cardBg = '#eef2ff'; }
             if (d.data.type === 'sampled-leaf') { headerBg = '#10b981'; cardBg = '#f0fdf4'; }
-            if (d.data.type === 'sample-node') { headerBg = '#059669'; cardBg = '#d1fae5'; }
 
             // Card BG
             group.append('rect')
@@ -408,7 +510,7 @@
                 .attr('rx', 2)
                 .attr('fill', headerBg);
 
-            if (d.data.type === 'region') {
+            if (d.data.type === 'region' || d.data.type === 'root') {
                 const fo = group.append('foreignObject')
                     .attr('x', -cardWidth/2)
                     .attr('y', 5)
@@ -418,19 +520,13 @@
                 const div = fo.append('xhtml:div')
                     .style('width', '100%')
                     .style('height', '100%')
-                    .style('padding', '8px 12px')
+                    .style('padding', '18px 12px')
                     .style('text-align', 'center');
 
-                const s = d.data.summary;
                 div.html(`
-                    <div class="font-bold text-sm text-slate-800">${d.data.name} ${d._children ? '▶' : ''}</div>
-                    <div class="grid grid-cols-2 gap-1.5 mt-2 text-[10.5px]">
-                        <div class="bg-indigo-50 border border-indigo-200 rounded py-1 px-1.5 text-indigo-900">
-                            <strong>Woredas:</strong> ${formatNumber(s.selectedWoredas)} / ${formatNumber(s.totalWoredas)}
-                        </div>
-                        <div class="bg-emerald-50 border border-emerald-200 rounded py-1 px-1.5 text-emerald-900">
-                            <strong>Kebeles:</strong> ${formatNumber(s.selectedKebeles)} / ${formatNumber(s.totalKebeles)}
-                        </div>
+                    <div class="font-bold text-base text-slate-800">${d.data.name} ${d._children ? '▶' : ''}</div>
+                    <div class="mt-2 text-[10px] text-slate-500">
+                        Click to ${d._children ? 'expand' : 'collapse'} hierarchy
                     </div>
                 `);
 
@@ -444,14 +540,63 @@
                 const div = fo.append('xhtml:div')
                     .style('width', '100%')
                     .style('height', '100%')
-                    .style('padding', '8px 12px')
+                    .style('padding', '20px 12px')
+                    .style('text-align', 'center');
+
+                div.html(`
+                    <div class="font-bold text-sm text-slate-800">${d.data.name} ${d._children ? '▶' : ''}</div>
+                    <div class="mt-2 text-[10px] text-slate-500">Mining status branches</div>
+                `);
+
+            } else if (d.data.type === 'mining') {
+                const fo = group.append('foreignObject')
+                    .attr('x', -cardWidth/2)
+                    .attr('y', 5)
+                    .attr('width', cardWidth)
+                    .attr('height', cardHeight - 5);
+
+                const div = fo.append('xhtml:div')
+                    .style('width', '100%')
+                    .style('height', '100%')
+                    .style('padding', '28px 12px')
+                    .style('text-align', 'center');
+
+                div.html(`
+                    <div class="font-bold text-xs text-amber-900 uppercase tracking-wide">${d.data.name} ${d._children ? '▶' : ''}</div>
+                    <div class="mt-2 text-[10px] text-amber-700">Woreda details</div>
+                `);
+
+            } else if (d.data.type === 'total' || d.data.type === 'grand-total') {
+                const fo = group.append('foreignObject')
+                    .attr('x', -cardWidth/2)
+                    .attr('y', 5)
+                    .attr('width', cardWidth)
+                    .attr('height', cardHeight - 5);
+
+                const div = fo.append('xhtml:div')
+                    .style('width', '100%')
+                    .style('height', '100%')
+                    .style('padding', '9px 12px')
                     .style('text-align', 'center');
 
                 const s = d.data.summary;
+                const isGrand = d.data.type === 'grand-total';
+
                 div.html(`
-                    <div class="font-bold text-sm text-slate-800">${d.data.name} ${d._children ? '▶' : ''}</div>
-                    <div class="mt-1.5 inline-block bg-sky-50 border border-sky-200 rounded py-0.5 px-2 text-[10.5px] text-sky-900">
-                        <strong>Woredas:</strong> ${formatNumber(s.selectedWoredas)} / ${formatNumber(s.totalWoredas)}
+                    <div class="font-bold ${isGrand ? 'text-base' : 'text-sm'} ${isGrand ? 'text-indigo-900' : 'text-emerald-900'}">
+                        ${d.data.name}
+                    </div>
+                    <div class="grid grid-cols-2 gap-1.5 mt-2 text-[9.5px]">
+                        <div class="bg-indigo-50 border border-indigo-200 rounded py-1 px-1.5 text-indigo-900">
+                            <strong>Woredas</strong><br>${formatNumber(s.selectedWoredas)} / ${formatNumber(s.totalWoredas)}
+                        </div>
+                        <div class="bg-emerald-50 border border-emerald-200 rounded py-1 px-1.5 text-emerald-900">
+                            <strong>Kebeles</strong><br>${formatNumber(s.selectedKebeles)} / ${formatNumber(s.totalKebeles)}
+                        </div>
+                    </div>
+                    <div class="mt-1.5 ${isGrand ? 'bg-indigo-600' : 'bg-emerald-600'} text-white rounded py-1.5 px-2 text-[10.5px] font-bold shadow-sm">
+                        ${isGrand ? 'GRAND TOTAL SAMPLE SIZE' : 'TOTAL SAMPLE SIZE'}:
+                        ${formatNumber(s.totalSampleSize)}
                     </div>
                 `);
 
@@ -474,7 +619,7 @@
                             <tr>
                                 <th style="width: 28px; text-align: center;">#</th>
                                 <th>Woreda</th>
-                                <th>Mining</th>
+                                <th>Mining Status</th>
                                 <th>SD</th>
                                 <th>Diversity</th>
                                 <th>Kebele</th>
@@ -513,7 +658,7 @@
                 tableHtml += `
                     <tr class="totals-row">
                         <td style="text-align: center;">-</td>
-                        <td colspan="4">Total (${d.data.rows.length} Woredas)</td>
+                        <td colspan="4">Total (${d.data.rows.length} Woredas) — <span style="color:#047857; font-weight:800;">Sample Size Total: ${formatNumber(d.data.sampleSize)}</span></td>
                         <td>${formatNumber(totKebele)}</td>
                         <td>${formatNumber(totPop)}</td>
                         <td>${formatNumber(totU5)}</td>
@@ -583,33 +728,12 @@
                         <td style="text-align: center;">-</td>
                         <td>Total (${d.data.items.length})</td>
                         <td>${formatNumber(totalU5)}</td>
-                        <td>${formatNumber(totalSample)}</td>
+                        <td class="text-emerald-900 font-extrabold">${formatNumber(totalSample)}</td>
                     </tr>
                 `;
 
                 kebeleHtml += `</tbody></table>`;
                 div.html(kebeleHtml);
-
-            } else if (d.data.type === 'sample-node') {
-                // Dedicated sample size leaf node card
-                const fo = group.append('foreignObject')
-                    .attr('x', -cardWidth/2)
-                    .attr('y', 5)
-                    .attr('width', cardWidth)
-                    .attr('height', cardHeight - 5);
-
-                const div = fo.append('xhtml:div')
-                    .style('width', '100%')
-                    .style('height', '100%')
-                    .style('display', 'flex')
-                    .style('flex-direction', 'column')
-                    .style('align-items', 'center')
-                    .style('justify-content', 'center');
-
-                div.html(`
-                    <div class="text-[10px] font-semibold text-emerald-900 uppercase tracking-wide">Sample Size Total</div>
-                    <div class="text-base font-extrabold text-emerald-950">${formatNumber(d.data.sampleSize)}</div>
-                `);
 
             } else {
                 group.append('text')
@@ -650,7 +774,7 @@
                 const tx = d.target.x, ty = d.target.y;
                 return `M ${sx} ${sy} C ${sx} ${(sy + ty)/2}, ${tx} ${(sy + ty)/2}, ${tx} ${ty}`;
             })
-            .attr('class', d => (d.target.data.type === 'sampled-leaf' || d.target.data.type === 'sample-node') ? 'link link-sampled' : 'link');
+            .attr('class', d => d.target.data.type === 'sampled-leaf' ? 'link link-sampled' : 'link');
 
         link.exit().transition().duration(duration)
             .attr('d', d => {
@@ -660,89 +784,6 @@
             .remove();
 
         nodes.forEach(d => { d.x0 = d.x; d.y0 = d.y; });
-
-        // CONNECT ALL INDIVIDUAL SAMPLE SIZE LEAF NODES TO A BOTTOM GRAND TOTAL NODE
-        renderGrandTotalNode(nodes, source);
-    }
-
-    function renderGrandTotalNode(nodes, source) {
-        const sampleNodes = nodes.filter(d => d.data.type === 'sample-node');
-
-        if (sampleNodes.length === 0) {
-            grandG.selectAll("*").remove();
-            return;
-        }
-
-        const grandTotalSize = sampleNodes.reduce((acc, d) => acc + toNumber(d.data.sampleSize), 0);
-        const grandWidth = 260;
-        const grandHeight = 60;
-
-        const avgX = d3.mean(sampleNodes, d => d.x);
-        const maxBottomY = d3.max(sampleNodes, d => d.y + getNodeSize(d).height);
-        const grandY = maxBottomY + 70;
-
-        let grandNode = grandG.select('g.grand-node');
-        if (grandNode.empty()) {
-            grandNode = grandG.append('g')
-                .attr('class', 'grand-node')
-                .attr('transform', `translate(${source.x0}, ${source.y0})`);
-
-            grandNode.append('rect')
-                .attr('class', 'card-bg')
-                .attr('fill', '#047857')
-                .attr('stroke', '#065f46')
-                .attr('stroke-width', 2);
-
-            grandNode.append('foreignObject').attr('class', 'fo-content');
-        }
-
-        grandNode.transition().duration(duration)
-            .attr('transform', `translate(${avgX}, ${grandY})`);
-
-        grandNode.select('rect.card-bg')
-            .attr('x', -grandWidth / 2)
-            .attr('y', 0)
-            .attr('width', grandWidth)
-            .attr('height', grandHeight);
-
-        const contentHtml = `
-            <div style="width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; color: white;">
-                <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; tracking-wider; opacity: 0.9;">Grand Total Sample Size</div>
-                <div style="font-size: 18px; font-weight: 800;">${formatNumber(grandTotalSize)}</div>
-            </div>
-        `;
-
-        grandNode.select('foreignObject.fo-content')
-            .attr('x', -grandWidth / 2)
-            .attr('y', 0)
-            .attr('width', grandWidth)
-            .attr('height', grandHeight)
-            .html(contentHtml);
-
-        // LINKS FROM SAMPLE LEAF NODES TO GRAND TOTAL NODE
-        const grandLinks = grandG.selectAll('path.link-grand')
-            .data(sampleNodes, d => d.id);
-
-        const grandLinksEnter = grandLinks.enter().append('path')
-            .attr('class', 'link link-grand')
-            .attr('d', d => {
-                const nodeH = getNodeSize(d).height;
-                const sx = d.x, sy = d.y + nodeH;
-                return `M ${sx} ${sy} C ${sx} ${sy}, ${sx} ${sy}, ${sx} ${sy}`;
-            });
-
-        grandLinksEnter.merge(grandLinks)
-            .transition().duration(duration)
-            .attr('d', d => {
-                const nodeH = getNodeSize(d).height;
-                const sx = d.x, sy = d.y + nodeH;
-                const tx = avgX, ty = grandY;
-                return `M ${sx} ${sy} C ${sx} ${(sy + ty)/2}, ${tx} ${(sy + ty)/2}, ${tx} ${ty}`;
-            });
-
-        grandLinks.exit().transition().duration(duration)
-            .attr('d', () => `M ${avgX} ${grandY} C ${avgX} ${grandY}, ${avgX} ${grandY}, ${avgX} ${grandY}`)
-            .remove();
     }
 </script>
 </body>
