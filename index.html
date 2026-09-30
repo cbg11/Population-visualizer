@@ -629,7 +629,7 @@
         }
 
         // Mining totals — centered directly beneath the parent Mining card.
-        const miningTotalY = leafBottom + 220;
+        const miningTotalY = leafBottom + 240;
         const miningTotalNodes = miningNodes.map(m => {
             const leaves = getDeepestLeaves(m);
             const x = m.x;                                   // <-- centered under mining
@@ -649,7 +649,7 @@
         });
 
         // Zone totals — centered directly beneath the parent Zone card.
-        const zoneTotalY = miningTotalY + 240;
+        const zoneTotalY = miningTotalY + 280;
         const zoneTotalNodes = zoneNodes.map(z => {
             const childMiningTotals = miningTotalNodes.filter(mt => isDescendantOf(mt.parentMining, z));
             const x = z.x;                                   // <-- centered under zone
@@ -669,7 +669,7 @@
         });
 
         // Region totals — centered directly beneath the parent Region card.
-        const regionTotalY = zoneTotalY + 260;
+        const regionTotalY = zoneTotalY + 320;
         const regionTotalNodes = regionNodes.map(r => {
             const childZoneTotals = zoneTotalNodes.filter(zt => isDescendantOf(zt.parentZone, r));
             const x = r.x;                                   // <-- centered under region
