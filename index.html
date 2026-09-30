@@ -629,7 +629,7 @@
         }
 
         // Mining totals — beneath the deepest leaves of each mining.
-        const miningTotalY = leafBottom + 200;
+        const miningTotalY = leafBottom + 350;
         const miningTotalNodes = miningNodes.map(m => {
             const leaves = getDeepestLeaves(m);
             const x = leaves.length ? d3.mean(leaves, d => d.x) : m.x;
@@ -649,7 +649,7 @@
         });
 
         // Zone totals — beneath mining totals.
-        const zoneTotalY = miningTotalY + 220;
+        const zoneTotalY = miningTotalY + 280;
         const zoneTotalNodes = zoneNodes.map(z => {
             const childMiningTotals = miningTotalNodes.filter(mt => isDescendantOf(mt.parentMining, z));
             const x = childMiningTotals.length ? d3.mean(childMiningTotals, d => d.x) : z.x;
@@ -669,7 +669,7 @@
         });
 
         // Region totals — beneath zone totals.
-        const regionTotalY = zoneTotalY + 240;
+        const regionTotalY = zoneTotalY + 300;
         const regionTotalNodes = regionNodes.map(r => {
             const childZoneTotals = zoneTotalNodes.filter(zt => isDescendantOf(zt.parentZone, r));
             const x = childZoneTotals.length ? d3.mean(childZoneTotals, d => d.x) : r.x;
