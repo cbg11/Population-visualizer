@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Diamond Hierarchy Visualizer</title>
+    <title>Hierarchy Visualizer</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
@@ -579,7 +579,7 @@
         const nodes = allTreeNodes.filter(d => d.data.type !== 'invisible-root');
         const links = allTreeLinks.filter(d => d.source.data.type !== 'invisible-root');
 
-        // ===== 2. Y positions by depth (increased vertical gap = 200) =====
+        // ===== 2. Y positions by depth =====
         const VERTICAL_GAP = 200;
         const levels = d3.group(nodes, d => d.depth);
         let cumulativeY = 0;
@@ -614,7 +614,7 @@
             ? d3.max(deepestLeaves, d => d.y + getNodeSize(d).height)
             : 0;
 
-        // ===== 4. Build overlay total nodes (with more spacing) =====
+        // ===== 4. Build overlay total nodes =====
         const miningNodes = nodes.filter(d => d.data.type === 'mining');
         const zoneNodes = nodes.filter(d => d.data.type === 'zone');
         const regionNodes = nodes.filter(d => d.data.type === 'region');
@@ -628,11 +628,11 @@
             return false;
         }
 
-        // Mining totals — beneath the deepest leaves of each mining.
-        const miningTotalY = leafBottom + 350;
+        // Mining totals — centered directly beneath the parent Mining card.
+        const miningTotalY = leafBottom + 200;
         const miningTotalNodes = miningNodes.map(m => {
             const leaves = getDeepestLeaves(m);
-            const x = leaves.length ? d3.mean(leaves, d => d.x) : m.x;
+            const x = m.x;                                   // <-- centered under mining
             return {
                 id: 'mt-' + m.id,
                 x: x,
@@ -648,11 +648,11 @@
             };
         });
 
-        // Zone totals — beneath mining totals.
-        const zoneTotalY = miningTotalY + 280;
+        // Zone totals — centered directly beneath the parent Zone card.
+        const zoneTotalY = miningTotalY + 220;
         const zoneTotalNodes = zoneNodes.map(z => {
             const childMiningTotals = miningTotalNodes.filter(mt => isDescendantOf(mt.parentMining, z));
-            const x = childMiningTotals.length ? d3.mean(childMiningTotals, d => d.x) : z.x;
+            const x = z.x;                                   // <-- centered under zone
             return {
                 id: 'zt-' + z.id,
                 x: x,
@@ -668,11 +668,11 @@
             };
         });
 
-        // Region totals — beneath zone totals.
-        const regionTotalY = zoneTotalY + 300;
+        // Region totals — centered directly beneath the parent Region card.
+        const regionTotalY = zoneTotalY + 240;
         const regionTotalNodes = regionNodes.map(r => {
             const childZoneTotals = zoneTotalNodes.filter(zt => isDescendantOf(zt.parentZone, r));
-            const x = childZoneTotals.length ? d3.mean(childZoneTotals, d => d.x) : r.x;
+            const x = r.x;                                   // <-- centered under region
             return {
                 id: 'rt-' + r.id,
                 x: x,
