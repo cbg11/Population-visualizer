@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Hierarchical Population Visualizer</title>
+    <title>Diamond Hierarchy Visualizer</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
@@ -11,66 +11,67 @@
     <style>
         * { box-sizing: border-box; }
         body { background: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-        
-        .node { cursor: pointer; }
-        .node rect.card-bg { 
-            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1); 
-            rx: 10px; 
-            ry: 10px; 
+
+        .node { cursor: pointer; user-select: none; }
+        .node rect.card-bg {
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            rx: 10px;
+            ry: 10px;
             filter: drop-shadow(0 2px 4px rgba(0,0,0,0.06));
         }
-        .node:hover rect.card-bg { 
-            stroke: #6366f1; 
-            stroke-width: 2px; 
-            filter: drop-shadow(0 10px 15px rgba(99,102,241,0.2)); 
+        .node:hover rect.card-bg {
+            stroke: #6366f1;
+            stroke-width: 2px;
+            filter: drop-shadow(0 10px 15px rgba(99,102,241,0.2));
         }
-        
+
         .link { fill: none; stroke: #94a3b8; stroke-width: 2; transition: stroke 0.25s; }
         .link-sampled { stroke: #10b981 !important; stroke-width: 2px; stroke-dasharray: 5 5; }
-        .grand-convergence { fill: none; stroke: #94a3b8; stroke-width: 2; }
-        .total-node-label { font-weight: 800; }
 
-        
         /* Main Woreda Table Styling */
         .node-table { border-collapse: collapse; font-size: 10px; width: 100%; }
-        .node-table th { 
-            background-color: #334155; 
-            color: #f8fafc; 
-            font-weight: 600; 
-            padding: 6px 8px; 
-            text-align: left; 
+        .node-table th {
+            background-color: #334155;
+            color: #f8fafc;
+            font-weight: 600;
+            padding: 6px 8px;
+            text-align: left;
             letter-spacing: 0.02em;
         }
-        .node-table td { 
-            padding: 6px 8px; 
-            border-bottom: 1px solid #e2e8f0; 
-            color: #1e293b; 
-            white-space: nowrap; 
+        .node-table td {
+            padding: 6px 8px;
+            border-bottom: 1px solid #e2e8f0;
+            color: #1e293b;
+            white-space: nowrap;
         }
         .node-table tr:nth-child(even) { background-color: #f8fafc; }
         .node-table tr:hover { background-color: #f1f5f9; }
         .node-table tr.sampled-row { background-color: #cceede; font-weight: 600; }
         .node-table tr.sampled-row:hover { background-color: #a4dcbf; }
         .node-table tr.totals-row { background-color: #e2e8f0; font-weight: 700; border-top: 2px solid #94a3b8; }
-        
+
         /* Kebele Table Styling */
         .kebele-table { border-collapse: collapse; font-size: 9.5px; width: 100%; margin-top: 6px; }
-        .kebele-table th { 
-            background-color: #047857; 
-            color: #ffffff; 
-            font-weight: 600; 
-            padding: 5px 8px; 
-            text-align: left; 
+        .kebele-table th {
+            background-color: #047857;
+            color: #ffffff;
+            font-weight: 600;
+            padding: 5px 8px;
+            text-align: left;
         }
-        .kebele-table td { 
-            padding: 5px 8px; 
-            border-bottom: 1px solid #d1fae5; 
-            color: #064e3b; 
-            white-space: nowrap; 
+        .kebele-table td {
+            padding: 5px 8px;
+            border-bottom: 1px solid #d1fae5;
+            color: #064e3b;
+            white-space: nowrap;
         }
         .kebele-table tr:nth-child(even) { background-color: #f0fdf4; }
         .kebele-table tr:hover { background-color: #d1fae5; }
         .kebele-table tr.totals-row { background-color: #a7f3d0; font-weight: 700; border-top: 2px solid #059669; }
+
+        /* Scrollbar */
+        #treeContainer::-webkit-scrollbar { width: 6px; height: 6px; }
+        #treeContainer::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 12px; }
     </style>
 </head>
 <body class="min-h-screen flex flex-col">
@@ -78,9 +79,9 @@
 <header class="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white px-8 py-4 flex items-center justify-between shadow-lg">
     <div>
         <h1 class="text-xl font-bold tracking-tight text-white flex items-center gap-2">
-            Region <span class="text-indigo-400">→</span> Zone <span class="text-indigo-400">→</span> Mining Status <span class="text-indigo-400">→</span> Consolidated Woredas
+            Region <span class="text-indigo-400">→</span> Zone <span class="text-indigo-400">→</span> Mining <span class="text-indigo-400">→</span> Woredas <span class="text-indigo-400">→</span> Totals <span class="text-indigo-400">→</span> Grand Total
         </h1>
-        <p class="text-xs text-slate-300 mt-0.5">Interactive population hierarchy and kebele sampling visualizer</p>
+        <p class="text-xs text-slate-300 mt-0.5">Diamond-shaped hierarchy: leaves in the middle, totals below, grand total at the bottom.</p>
     </div>
     <div class="flex gap-3 items-center">
         <button id="resetZoom" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium px-3.5 py-2 rounded-lg border border-slate-700 transition duration-200">Reset View</button>
@@ -88,7 +89,7 @@
 </header>
 
 <main class="flex-1 relative flex flex-col p-5">
-    <div id="treeContainer" class="w-full flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden" style="min-height: 72vh;">
+    <div id="treeContainer" class="w-full flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden" style="min-height: 78vh;">
         <div id="placeholder" class="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div class="text-center p-8 border-2 border-dashed border-slate-300 rounded-3xl bg-slate-50/50 max-w-sm backdrop-blur-sm">
                 <div class="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-3 border border-indigo-100">
@@ -105,16 +106,15 @@
     let svg, g, zoom, root, i = 0;
     const duration = 350;
 
+    // ---------- helpers ----------
     function formatNumber(num) {
         if (num === undefined || num === null || num === '' || isNaN(num)) return num || '—';
         return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
     }
-
     function toNumber(val) {
         if (!val || isNaN(val)) return 0;
         return Number(val);
     }
-
     function isValueValid(val) {
         if (val === undefined || val === null) return false;
         const str = String(val).trim().toLowerCase();
@@ -131,19 +131,12 @@
         const placeholder = document.getElementById('placeholder');
         try {
             const response = await fetch(DATASET_URL, { cache: 'no-store' });
-            if (!response.ok) {
-                throw new Error(`Could not load ${DATASET_URL} (HTTP ${response.status}).`);
-            }
-
+            if (!response.ok) throw new Error(`Could not load ${DATASET_URL} (HTTP ${response.status}).`);
             const buffer = await response.arrayBuffer();
             const workbook = XLSX.read(buffer, { type: 'array' });
             const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
             const rows = XLSX.utils.sheet_to_json(firstSheet, { defval: '' });
-
-            if (!rows.length) {
-                throw new Error('The Excel file contains no data rows.');
-            }
-
+            if (!rows.length) throw new Error('The Excel file contains no data rows.');
             processData(rows);
         } catch (error) {
             console.error('Automatic dataset loading failed:', error);
@@ -158,10 +151,10 @@
 
     loadDefaultDataset();
 
+    // ---------- data processing ----------
     function processData(rows) {
         if (!rows || rows.length === 0) return;
 
-        // Structure: Region -> Zone -> MiningType -> Woreda
         const regionMap = {};
 
         rows.forEach(row => {
@@ -203,18 +196,8 @@
 
         const regionKeys = Object.keys(regionMap);
 
-        // Total nodes are intentionally separate from their parent nodes.
-        // This makes every level a "children + total" branch:
-        // Region -> Zones -> Region Total
-        // Zone -> Mining Types -> Zone Total
-        // Mining -> Woreda Table -> Mining Total
-        // Root -> Regions -> Grand Total
-        const makeTotalNode = (name, summary, level = 'total') => ({
-            name,
-            type: level === 'grand-total' ? 'grand-total' : 'total',
-            summary: { ...summary },
-            children: null
-        });
+        // ---- Build hierarchy WITHOUT total nodes ----
+        // Totals will be placed as overlay nodes in the layout phase.
 
         const buildMiningNode = (mName, mWoredas, zName) => {
             const woredaList = Object.values(mWoredas);
@@ -231,7 +214,6 @@
                 if (wRecord.isSampled && wRecord.sampledDetails.length > 0) {
                     const leafSampleSize = wRecord.sampledDetails.reduce((acc, d) => acc + d.sampleSize, 0);
                     miningSampleSize += leafSampleSize;
-
                     sampledChildren.push({
                         name: wRecord.woreda,
                         type: 'sampled-leaf',
@@ -257,17 +239,11 @@
                 children: sampledChildren.length > 0 ? sampledChildren : null
             };
 
-            const totalNode = makeTotalNode(
-                `${mName} Total`,
-                summary,
-                'total'
-            );
-
             return {
                 name: mName,
                 type: 'mining',
                 summary,
-                children: [tableNode, totalNode]
+                children: [tableNode]
             };
         };
 
@@ -284,22 +260,10 @@
                 zoneSampleSize += m.summary.totalSampleSize;
             });
 
-            const summary = {
-                totalWoredas,
-                selectedWoredas,
-                totalKebeles,
-                selectedKebeles,
-                totalSampleSize: zoneSampleSize
-            };
-
-            miningNodes.push(
-                makeTotalNode(`${zName} Total`, summary, 'total')
-            );
-
             return {
                 name: zName,
                 type: 'zone',
-                summary,
+                summary: { totalWoredas, selectedWoredas, totalKebeles, selectedKebeles, totalSampleSize: zoneSampleSize },
                 children: miningNodes
             };
         };
@@ -318,22 +282,10 @@
                 totalSampleSize += z.summary.totalSampleSize;
             });
 
-            const summary = {
-                totalWoredas,
-                selectedWoredas,
-                totalKebeles,
-                selectedKebeles,
-                totalSampleSize
-            };
-
-            zones.push(
-                makeTotalNode(`${rName} Total`, summary, 'total')
-            );
-
             return {
                 name: rName,
                 type: 'region',
-                summary,
+                summary: { totalWoredas, selectedWoredas, totalKebeles, selectedKebeles, totalSampleSize },
                 children: zones
             };
         };
@@ -349,21 +301,16 @@
             grandTotalSampleSize += r.summary.totalSampleSize;
         });
 
-        const grandSummary = {
-            totalWoredas: grandTotalWoredas,
-            selectedWoredas: grandSelectedWoredas,
-            totalKebeles: grandTotalKebeles,
-            selectedKebeles: grandSelectedKebeles,
-            totalSampleSize: grandTotalSampleSize
-        };
-
-        // The top Grand Total is the actual hierarchy root.
-        // A second Grand Total is rendered at the bottom as a visual
-        // summary/convergence node, matching the requested diagram.
         const rootData = {
             name: 'Grand Total',
             type: 'grand-total',
-            summary: grandSummary,
+            summary: {
+                totalWoredas: grandTotalWoredas,
+                selectedWoredas: grandSelectedWoredas,
+                totalKebeles: grandTotalKebeles,
+                selectedKebeles: grandSelectedKebeles,
+                totalSampleSize: grandTotalSampleSize
+            },
             children: regionNodes
         };
 
@@ -371,6 +318,7 @@
         renderTree(rootData);
     }
 
+    // ---------- sizes ----------
     function getNodeSize(d) {
         if (d.data.type === 'woreda-table-node') {
             const rowCount = d.data.rows.length + 1;
@@ -384,37 +332,22 @@
             const height = 65 + (itemCount * 28);
             return { width, height };
         }
-        if (d.data.type === 'mining') {
-            return { width: 250, height: 90 };
-        }
-        if (d.data.type === 'zone') {
-            return { width: 280, height: 95 };
-        }
-        if (d.data.type === 'region' || d.data.type === 'root') {
-            return { width: 360, height: 115 };
-        }
-        if (d.data.type === 'total' || d.data.type === 'grand-total') {
-            return { width: 310, height: 105 };
-        }
+        if (d.data.type === 'mining') return { width: 250, height: 85 };
+        if (d.data.type === 'zone') return { width: 280, height: 90 };
+        if (d.data.type === 'region' || d.data.type === 'root') return { width: 360, height: 110 };
+        if (d.data.type === 'total' || d.data.type === 'grand-total') return { width: 320, height: 110 };
         return { width: 240, height: 60 };
     }
 
-    function collapse(d) {
-        if (d.children) {
-            d._children = d.children;
-            d._children.forEach(collapse);
-            d.children = null;
-        }
-    }
-
+    // ---------- tree render ----------
     function renderTree(data) {
         d3.select("#treeContainer").select("svg").remove();
 
         const container = document.getElementById('treeContainer');
         const width = container.clientWidth || 1000;
-        const height = container.clientHeight || 750;
+        const height = container.clientHeight || 780;
 
-        zoom = d3.zoom().scaleExtent([0.15, 3]).on('zoom', (e) => g.attr('transform', e.transform));
+        zoom = d3.zoom().scaleExtent([0.08, 3]).on('zoom', (e) => g.attr('transform', e.transform));
 
         svg = d3.select("#treeContainer")
             .append("svg")
@@ -428,9 +361,7 @@
         root = d3.hierarchy(data, d => d.children);
         root.x0 = 0; root.y0 = 0;
 
-        // Keep the main hierarchy expanded so the initial view matches the
-        // requested Region -> Zone -> Children -> TOTAL structure.
-        // Selected-kebele detail tables remain collapsed until clicked.
+        // Collapse sampled kebele detail tables initially
         function collapseSampledDetails(d) {
             if (!d.children) return;
             d.children.forEach(child => {
@@ -447,193 +378,98 @@
         update(root);
     }
 
-    function update(source) {
-        const treeLayout = d3.tree().nodeSize([380, 100]);
-        const treeData = treeLayout(root);
-        const nodes = treeData.descendants();
-        const links = treeData.links();
+    // ---------- render a node's content ----------
+    function renderNodeContent(group, d) {
+        const { width: cardWidth, height: cardHeight } = getNodeSize(d);
 
-        // First use D3 for horizontal ordering, then place each TOTAL below
-        // all of its real children. This produces: children -> TOTAL.
-        const normalChildren = d => (d.children || []).filter(c => !['total', 'grand-total'].includes(c.data.type));
-        const totalChild = d => (d.children || []).find(c => c.data.type === 'total');
+        let headerBg = '#4f46e5', cardBg = '#ffffff';
+        if (d.data.type === 'root' || d.data.type === 'region') headerBg = '#4338ca';
+        if (d.data.type === 'zone') headerBg = '#0284c7';
+        if (d.data.type === 'mining') headerBg = '#d97706';
+        if (d.data.type === 'woreda-table-node') headerBg = '#334155';
+        if (d.data.type === 'total') { headerBg = '#059669'; cardBg = '#f0fdf4'; }
+        if (d.data.type === 'grand-total') { headerBg = '#4f46e5'; cardBg = '#eef2ff'; }
+        if (d.data.type === 'sampled-leaf') { headerBg = '#10b981'; cardBg = '#f0fdf4'; }
 
-        const placeSubtree = (d, y) => {
-            d.y = y;
-            const children = d.children || [];
-            const regular = normalChildren(d);
-            const total = totalChild(d);
+        // Card BG
+        group.append('rect')
+            .attr('class', 'card-bg')
+            .attr('x', -cardWidth / 2)
+            .attr('y', 0)
+            .attr('width', cardWidth)
+            .attr('height', cardHeight)
+            .attr('fill', cardBg)
+            .attr('stroke', '#cbd5e1')
+            .attr('stroke-width', 1);
 
-            if (!children.length) return d.y + getNodeSize(d).height;
+        // Colored header line
+        group.append('rect')
+            .attr('x', -cardWidth / 2)
+            .attr('y', 0)
+            .attr('width', cardWidth)
+            .attr('height', 5)
+            .attr('rx', 2)
+            .attr('fill', headerBg);
 
-            const childY = y + getNodeSize(d).height + 65;
-            let subtreeBottom = y + getNodeSize(d).height;
-
-            regular.forEach(child => {
-                subtreeBottom = Math.max(subtreeBottom, placeSubtree(child, childY));
-            });
-
-            if (total) {
-                const totalY = subtreeBottom + 55;
-                total.x = regular.length
-                    ? d3.mean(regular, c => c.x)
-                    : d.x;
-                subtreeBottom = Math.max(subtreeBottom, placeSubtree(total, totalY));
-            }
-
-            return subtreeBottom;
-        };
-
-        // Keep D3's x ordering while computing vertical placement from the
-        // actual subtree heights. Root is the top Grand Total.
-        const rootY = 0;
-        placeSubtree(root, rootY);
-
-        // Put the top Grand Total centrally above all regions.
-        if (root.children && root.children.length) {
-            root.x = d3.mean(root.children, c => c.x);
-        }
-
-        // The lower Grand Total is a visual convergence node, not a child in
-        // the hierarchy (otherwise it would appear beside the regions).
-        const regionTotals = [];
-        root.children?.forEach(region => {
-            const rt = (region.children || []).find(c => c.data.type === 'total');
-            if (rt) regionTotals.push(rt);
-        });
-
-        const existingBottom = g.select('g.bottom-grand-total');
-        const bottomY = regionTotals.length
-            ? Math.max(...regionTotals.map(d => d.y + getNodeSize(d).height)) + 80
-            : 0;
-        const bottomX = root.x;
-
-        // NODES
-        const node = g.selectAll('g.node')
-            .data(nodes, d => d.id || (d.id = ++i));
-
-        const nodeEnter = node.enter().append('g')
-            .attr('class', 'node')
-            .attr('transform', d => `translate(${source.x0},${source.y0})`)
-            .on('click', (event, d) => {
-                if (d.children) {
-                    d._children = d.children;
-                    d.children = null;
-                } else if (d._children) {
-                    d.children = d._children;
-                    d._children = null;
-                } else {
-                    return;
-                }
-                update(d);
-            });
-
-        nodeEnter.each(function(d) {
-            const group = d3.select(this);
-            const { width: cardWidth, height: cardHeight } = getNodeSize(d);
-
-            let headerBg = '#4f46e5', cardBg = '#ffffff';
-            if (d.data.type === 'root' || d.data.type === 'region') headerBg = '#4338ca';
-            if (d.data.type === 'zone') headerBg = '#0284c7';
-            if (d.data.type === 'mining') headerBg = '#d97706';
-            if (d.data.type === 'woreda-table-node') headerBg = '#334155';
-            if (d.data.type === 'total') { headerBg = '#059669'; cardBg = '#f0fdf4'; }
-            if (d.data.type === 'grand-total') { headerBg = '#4f46e5'; cardBg = '#eef2ff'; }
-            if (d.data.type === 'sampled-leaf') { headerBg = '#10b981'; cardBg = '#f0fdf4'; }
-
-            // Card BG
-            group.append('rect')
-                .attr('class', 'card-bg')
-                .attr('x', -cardWidth/2)
-                .attr('y', 0)
+        if (d.data.type === 'region' || d.data.type === 'root') {
+            const fo = group.append('foreignObject')
+                .attr('x', -cardWidth / 2)
+                .attr('y', 5)
                 .attr('width', cardWidth)
-                .attr('height', cardHeight)
-                .attr('fill', cardBg)
-                .attr('stroke', '#cbd5e1')
-                .attr('stroke-width', 1);
-
-            // Colored Header Line
-            group.append('rect')
-                .attr('x', -cardWidth/2)
-                .attr('y', 0)
-                .attr('width', cardWidth)
-                .attr('height', 5)
-                .attr('rx', 2)
-                .attr('fill', headerBg);
-
-            if (d.data.type === 'region' || d.data.type === 'root') {
-                const fo = group.append('foreignObject')
-                    .attr('x', -cardWidth/2)
-                    .attr('y', 5)
-                    .attr('width', cardWidth)
-                    .attr('height', cardHeight - 5);
-
-                const div = fo.append('xhtml:div')
-                    .style('width', '100%')
-                    .style('height', '100%')
-                    .style('padding', '18px 12px')
-                    .style('text-align', 'center');
-
-                div.html(`
+                .attr('height', cardHeight - 5);
+            fo.append('xhtml:div')
+                .style('width', '100%')
+                .style('height', '100%')
+                .style('padding', '20px 12px')
+                .style('text-align', 'center')
+                .html(`
                     <div class="font-bold text-base text-slate-800">${d.data.name} ${d._children ? '▶' : ''}</div>
-                    <div class="mt-2 text-[10px] text-slate-500">
-                        Click to ${d._children ? 'expand' : 'collapse'} hierarchy
-                    </div>
+                    <div class="mt-2 text-[10px] text-slate-500">Click to ${d._children ? 'expand' : 'collapse'} hierarchy</div>
                 `);
-
-            } else if (d.data.type === 'zone') {
-                const fo = group.append('foreignObject')
-                    .attr('x', -cardWidth/2)
-                    .attr('y', 5)
-                    .attr('width', cardWidth)
-                    .attr('height', cardHeight - 5);
-
-                const div = fo.append('xhtml:div')
-                    .style('width', '100%')
-                    .style('height', '100%')
-                    .style('padding', '20px 12px')
-                    .style('text-align', 'center');
-
-                div.html(`
+        } else if (d.data.type === 'zone') {
+            const fo = group.append('foreignObject')
+                .attr('x', -cardWidth / 2)
+                .attr('y', 5)
+                .attr('width', cardWidth)
+                .attr('height', cardHeight - 5);
+            fo.append('xhtml:div')
+                .style('width', '100%')
+                .style('height', '100%')
+                .style('padding', '22px 12px')
+                .style('text-align', 'center')
+                .html(`
                     <div class="font-bold text-sm text-slate-800">${d.data.name} ${d._children ? '▶' : ''}</div>
                     <div class="mt-2 text-[10px] text-slate-500">Mining status branches</div>
                 `);
-
-            } else if (d.data.type === 'mining') {
-                const fo = group.append('foreignObject')
-                    .attr('x', -cardWidth/2)
-                    .attr('y', 5)
-                    .attr('width', cardWidth)
-                    .attr('height', cardHeight - 5);
-
-                const div = fo.append('xhtml:div')
-                    .style('width', '100%')
-                    .style('height', '100%')
-                    .style('padding', '28px 12px')
-                    .style('text-align', 'center');
-
-                div.html(`
+        } else if (d.data.type === 'mining') {
+            const fo = group.append('foreignObject')
+                .attr('x', -cardWidth / 2)
+                .attr('y', 5)
+                .attr('width', cardWidth)
+                .attr('height', cardHeight - 5);
+            fo.append('xhtml:div')
+                .style('width', '100%')
+                .style('height', '100%')
+                .style('padding', '28px 12px')
+                .style('text-align', 'center')
+                .html(`
                     <div class="font-bold text-xs text-amber-900 uppercase tracking-wide">${d.data.name} ${d._children ? '▶' : ''}</div>
                     <div class="mt-2 text-[10px] text-amber-700">Woreda details</div>
                 `);
-
-            } else if (d.data.type === 'total' || d.data.type === 'grand-total') {
-                const fo = group.append('foreignObject')
-                    .attr('x', -cardWidth/2)
-                    .attr('y', 5)
-                    .attr('width', cardWidth)
-                    .attr('height', cardHeight - 5);
-
-                const div = fo.append('xhtml:div')
-                    .style('width', '100%')
-                    .style('height', '100%')
-                    .style('padding', '9px 12px')
-                    .style('text-align', 'center');
-
-                const s = d.data.summary;
-                const isGrand = d.data.type === 'grand-total';
-
-                div.html(`
+        } else if (d.data.type === 'total' || d.data.type === 'grand-total') {
+            const fo = group.append('foreignObject')
+                .attr('x', -cardWidth / 2)
+                .attr('y', 5)
+                .attr('width', cardWidth)
+                .attr('height', cardHeight - 5);
+            const s = d.data.summary;
+            const isGrand = d.data.type === 'grand-total';
+            fo.append('xhtml:div')
+                .style('width', '100%')
+                .style('height', '100%')
+                .style('padding', '9px 12px')
+                .style('text-align', 'center')
+                .html(`
                     <div class="font-bold ${isGrand ? 'text-base' : 'text-sm'} ${isGrand ? 'text-indigo-900' : 'text-emerald-900'}">
                         ${d.data.name}
                     </div>
@@ -650,180 +486,313 @@
                         ${formatNumber(s.totalSampleSize)}
                     </div>
                 `);
+        } else if (d.data.type === 'woreda-table-node') {
+            const fo = group.append('foreignObject')
+                .attr('x', -cardWidth / 2)
+                .attr('y', 5)
+                .attr('width', cardWidth)
+                .attr('height', cardHeight - 5);
+            const div = fo.append('xhtml:div')
+                .style('width', '100%')
+                .style('height', '100%')
+                .style('overflow', 'hidden')
+                .style('padding', '10px 12px');
 
-            } else if (d.data.type === 'woreda-table-node') {
-                const fo = group.append('foreignObject')
-                    .attr('x', -cardWidth/2)
-                    .attr('y', 5)
-                    .attr('width', cardWidth)
-                    .attr('height', cardHeight - 5);
-
-                const div = fo.append('xhtml:div')
-                    .style('width', '100%')
-                    .style('height', '100%')
-                    .style('overflow', 'hidden')
-                    .style('padding', '10px 12px');
-
-                let tableHtml = `
-                    <table class="node-table">
-                        <thead>
-                            <tr>
-                                <th style="width: 28px; text-align: center;">#</th>
-                                <th>Woreda</th>
-                                <th>Mining Status</th>
-                                <th>SD</th>
-                                <th>Diversity</th>
-                                <th>Kebele</th>
-                                <th>Population</th>
-                                <th>Total U5</th>
-                                <th>Selected Kebele</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                `;
-
-                let totKebele = 0, totPop = 0, totU5 = 0, totSelectedKebele = 0;
-
-                d.data.rows.forEach((r, idx) => {
-                    totKebele += toNumber(r.totalKebele);
-                    totPop += toNumber(r.population);
-                    totU5 += toNumber(r.totalU5);
-                    totSelectedKebele += toNumber(r.sampledKebele);
-
-                    const rowClass = r.isSampled ? 'sampled-row' : '';
-                    tableHtml += `
-                        <tr class="${rowClass}">
-                            <td style="text-align: center; color: #64748b; font-weight: 600;">${idx + 1}</td>
-                            <td>${r.woreda} ${r.isSampled ? '<span style="color:#10b981">★</span>' : ''}</td>
-                            <td>${r.mining || '—'}</td>
-                            <td>${r.sd || '—'}</td>
-                            <td>${r.diversity || '—'}</td>
-                            <td>${formatNumber(r.totalKebele)}</td>
-                            <td>${formatNumber(r.population)}</td>
-                            <td>${formatNumber(r.totalU5)}</td>
-                            <td>${formatNumber(r.sampledKebele)}</td>
-                        </tr>
-                    `;
-                });
-
-                tableHtml += `
-                    <tr class="totals-row">
-                        <td style="text-align: center;">-</td>
-                        <td colspan="4">Total (${d.data.rows.length} Woredas) — <span style="color:#047857; font-weight:800;">Sample Size Total: ${formatNumber(d.data.sampleSize)}</span></td>
-                        <td>${formatNumber(totKebele)}</td>
-                        <td>${formatNumber(totPop)}</td>
-                        <td>${formatNumber(totU5)}</td>
-                        <td>${formatNumber(totSelectedKebele)}</td>
-                    </tr>
-                `;
-
-                tableHtml += `</tbody></table>`;
-
-                if (d.data.children || d._children) {
-                    tableHtml += `
-                        <div class="text-center py-1.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-[10px] font-bold rounded-lg mt-2 shadow-sm transition">
-                            ${d.children ? '▼ Showing Selected Kebeles' : '▶ Click Node to Expand Selected Kebeles'}
-                        </div>
-                    `;
-                }
-
-                div.html(tableHtml);
-
-            } else if (d.data.type === 'sampled-leaf') {
-                const fo = group.append('foreignObject')
-                    .attr('x', -cardWidth/2)
-                    .attr('y', 5)
-                    .attr('width', cardWidth)
-                    .attr('height', cardHeight - 5);
-
-                const div = fo.append('xhtml:div')
-                    .style('width', '100%')
-                    .style('height', '100%')
-                    .style('padding', '8px 10px')
-                    .style('overflow', 'visible');
-
-                let totalU5 = 0, totalSample = 0;
-
-                let kebeleHtml = `
-                    <div class="text-center font-bold text-emerald-900 text-xs mb-1 tracking-tight flex items-center justify-center gap-1.5">
-                        <span>${d.data.name}</span>
-                        <span class="text-[9px] bg-emerald-200 text-emerald-800 px-1.5 py-0.5 rounded-full font-semibold">Randomly Selected</span>
-                    </div>
-                    <table class="kebele-table">
-                        <thead>
-                            <tr>
-                                <th style="width: 24px; text-align: center;">#</th>
-                                <th>List of Kebeles</th>
-                                <th>Kebele U5</th>
-                                <th>Sample</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                `;
-
-                d.data.items.forEach((item, idx) => {
-                    totalU5 += toNumber(item.kebeleU5);
-                    totalSample += toNumber(item.sampleSize);
-                    kebeleHtml += `
+            let tableHtml = `
+                <table class="node-table">
+                    <thead>
                         <tr>
-                            <td style="text-align: center; color: #047857; font-weight: 600;">${idx + 1}</td>
-                            <td class="font-medium">${item.listOfKebeles || '—'}</td>
-                            <td>${formatNumber(item.kebeleU5)}</td>
-                            <td class="font-semibold text-emerald-700">${formatNumber(item.sampleSize)}</td>
+                            <th style="width: 28px; text-align: center;">#</th>
+                            <th>Woreda</th>
+                            <th>Mining Status</th>
+                            <th>SD</th>
+                            <th>Diversity</th>
+                            <th>Kebele</th>
+                            <th>Population</th>
+                            <th>Total U5</th>
+                            <th>Selected Kebele</th>
                         </tr>
-                    `;
-                });
+                    </thead>
+                    <tbody>
+            `;
 
-                kebeleHtml += `
-                    <tr class="totals-row">
-                        <td style="text-align: center;">-</td>
-                        <td>Total (${d.data.items.length})</td>
-                        <td>${formatNumber(totalU5)}</td>
-                        <td class="text-emerald-900 font-extrabold">${formatNumber(totalSample)}</td>
+            let totKebele = 0, totPop = 0, totU5 = 0, totSelectedKebele = 0;
+
+            d.data.rows.forEach((r, idx) => {
+                totKebele += toNumber(r.totalKebele);
+                totPop += toNumber(r.population);
+                totU5 += toNumber(r.totalU5);
+                totSelectedKebele += toNumber(r.sampledKebele);
+
+                const rowClass = r.isSampled ? 'sampled-row' : '';
+                tableHtml += `
+                    <tr class="${rowClass}">
+                        <td style="text-align: center; color: #64748b; font-weight: 600;">${idx + 1}</td>
+                        <td>${r.woreda} ${r.isSampled ? '<span style="color:#10b981">★</span>' : ''}</td>
+                        <td>${r.mining || '—'}</td>
+                        <td>${r.sd || '—'}</td>
+                        <td>${r.diversity || '—'}</td>
+                        <td>${formatNumber(r.totalKebele)}</td>
+                        <td>${formatNumber(r.population)}</td>
+                        <td>${formatNumber(r.totalU5)}</td>
+                        <td>${formatNumber(r.sampledKebele)}</td>
                     </tr>
                 `;
+            });
 
-                kebeleHtml += `</tbody></table>`;
-                div.html(kebeleHtml);
+            tableHtml += `
+                <tr class="totals-row">
+                    <td style="text-align: center;">-</td>
+                    <td colspan="4">Total (${d.data.rows.length} Woredas) — <span style="color:#047857; font-weight:800;">Sample Size Total: ${formatNumber(d.data.sampleSize)}</span></td>
+                    <td>${formatNumber(totKebele)}</td>
+                    <td>${formatNumber(totPop)}</td>
+                    <td>${formatNumber(totU5)}</td>
+                    <td>${formatNumber(totSelectedKebele)}</td>
+                </tr>
+            `;
 
-            } else {
-                group.append('text')
-                    .attr('x', 0)
-                    .attr('y', 28)
-                    .attr('text-anchor', 'middle')
-                    .style('font-size', '12px')
-                    .style('font-weight', '700')
-                    .style('fill', '#1e293b')
-                    .text(`${d.data.name} ${d._children ? '▶' : ''}`);
+            tableHtml += `</tbody></table>`;
+
+            if (d.data.children || d._children) {
+                tableHtml += `
+                    <div class="text-center py-1.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-[10px] font-bold rounded-lg mt-2 shadow-sm transition">
+                        ${d.children ? '▼ Showing Selected Kebeles' : '▶ Click Node to Expand Selected Kebeles'}
+                    </div>
+                `;
             }
+
+            div.html(tableHtml);
+        } else if (d.data.type === 'sampled-leaf') {
+            const fo = group.append('foreignObject')
+                .attr('x', -cardWidth / 2)
+                .attr('y', 5)
+                .attr('width', cardWidth)
+                .attr('height', cardHeight - 5);
+            const div = fo.append('xhtml:div')
+                .style('width', '100%')
+                .style('height', '100%')
+                .style('padding', '8px 10px')
+                .style('overflow', 'visible');
+
+            let totalU5 = 0, totalSample = 0;
+
+            let kebeleHtml = `
+                <div class="text-center font-bold text-emerald-900 text-xs mb-1 tracking-tight flex items-center justify-center gap-1.5">
+                    <span>${d.data.name}</span>
+                    <span class="text-[9px] bg-emerald-200 text-emerald-800 px-1.5 py-0.5 rounded-full font-semibold">Randomly Selected</span>
+                </div>
+                <table class="kebele-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 24px; text-align: center;">#</th>
+                            <th>List of Kebeles</th>
+                            <th>Kebele U5</th>
+                            <th>Sample</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            d.data.items.forEach((item, idx) => {
+                totalU5 += toNumber(item.kebeleU5);
+                totalSample += toNumber(item.sampleSize);
+                kebeleHtml += `
+                    <tr>
+                        <td style="text-align: center; color: #047857; font-weight: 600;">${idx + 1}</td>
+                        <td class="font-medium">${item.listOfKebeles || '—'}</td>
+                        <td>${formatNumber(item.kebeleU5)}</td>
+                        <td class="font-semibold text-emerald-700">${formatNumber(item.sampleSize)}</td>
+                    </tr>
+                `;
+            });
+
+            kebeleHtml += `
+                <tr class="totals-row">
+                    <td style="text-align: center;">-</td>
+                    <td>Total (${d.data.items.length})</td>
+                    <td>${formatNumber(totalU5)}</td>
+                    <td class="text-emerald-900 font-extrabold">${formatNumber(totalSample)}</td>
+                </tr>
+            `;
+
+            kebeleHtml += `</tbody></table>`;
+            div.html(kebeleHtml);
+        } else {
+            group.append('text')
+                .attr('x', 0)
+                .attr('y', 28)
+                .attr('text-anchor', 'middle')
+                .style('font-size', '12px')
+                .style('font-weight', '700')
+                .style('fill', '#1e293b')
+                .text(`${d.data.name} ${d._children ? '▶' : ''}`);
+        }
+    }
+
+    // ---------- update / layout ----------
+    function update(source) {
+        // ===== 1. TOP TREE LAYOUT =====
+        const treeLayout = d3.tree().nodeSize([860, 1]);
+        const treeData = treeLayout(root);
+        const nodes = treeData.descendants();
+        const links = treeData.links();
+
+        // Vertical position by depth, using max card height per level
+        const levels = d3.group(nodes, d => d.depth);
+        let cumulativeY = 0;
+        const depthYMap = new Map();
+        Array.from(levels.keys()).sort((a, b) => a - b).forEach(depth => {
+            depthYMap.set(depth, cumulativeY);
+            const levelNodes = levels.get(depth);
+            if (levelNodes && levelNodes.length) {
+                const maxH = d3.max(levelNodes, d => getNodeSize(d).height);
+                cumulativeY += maxH + 100;
+            }
+        });
+        nodes.forEach(d => { d.y = depthYMap.get(d.depth); });
+
+        const leafBottom = d3.max(nodes, d => d.y + getNodeSize(d).height);
+
+        // ===== 2. BUILD OVERLAY TOTAL NODES =====
+        const miningNodes = nodes.filter(d => d.data.type === 'mining');
+        const zoneNodes = nodes.filter(d => d.data.type === 'zone');
+        const regionNodes = nodes.filter(d => d.data.type === 'region');
+
+        const miningTotalY = leafBottom + 110;
+        const zoneTotalY = miningTotalY + 155;
+        const regionTotalY = zoneTotalY + 165;
+        const grandTotalY = regionTotalY + 185;
+
+        const isDescendantOf = (node, ancestor) => {
+            let p = node.parent;
+            while (p) {
+                if (p === ancestor) return true;
+                p = p.parent;
+            }
+            return false;
+        };
+
+        // Mining totals — centered under the mining's woreda table
+        const miningTotalNodes = miningNodes.map(m => {
+            const tableChild = (m.children || []).find(c => c.data.type === 'woreda-table-node');
+            const x = tableChild ? tableChild.x : m.x;
+            return {
+                id: 'mt-' + m.id,
+                x: x,
+                y: miningTotalY,
+                parentMining: m,
+                isOverlay: true,
+                data: {
+                    name: `${m.data.name} Total`,
+                    type: 'total',
+                    summary: m.data.summary
+                }
+            };
+        });
+
+        // Zone totals — centered under their mining totals
+        const zoneTotalNodes = zoneNodes.map(z => {
+            const childMiningTotals = miningTotalNodes.filter(mt => isDescendantOf(mt.parentMining, z));
+            const x = childMiningTotals.length ? d3.mean(childMiningTotals, d => d.x) : z.x;
+            return {
+                id: 'zt-' + z.id,
+                x: x,
+                y: zoneTotalY,
+                parentZone: z,
+                isOverlay: true,
+                data: {
+                    name: `${z.data.name} Total`,
+                    type: 'total',
+                    summary: z.data.summary
+                }
+            };
+        });
+
+        // Region totals — centered under their zone totals
+        const regionTotalNodes = regionNodes.map(r => {
+            const childZoneTotals = zoneTotalNodes.filter(zt => isDescendantOf(zt.parentZone, r));
+            const x = childZoneTotals.length ? d3.mean(childZoneTotals, d => d.x) : r.x;
+            return {
+                id: 'rt-' + r.id,
+                x: x,
+                y: regionTotalY,
+                parentRegion: r,
+                isOverlay: true,
+                data: {
+                    name: `${r.data.name} Total`,
+                    type: 'total',
+                    summary: r.data.summary
+                }
+            };
+        });
+
+        // Bottom Grand Total — centered below everything
+        const grandTotalNode = {
+            id: 'gt-bottom',
+            x: root.x,
+            y: grandTotalY,
+            isOverlay: true,
+            data: {
+                name: 'Grand Total',
+                type: 'grand-total',
+                summary: root.data.summary
+            }
+        };
+
+        const allOverlayNodes = [...miningTotalNodes, ...zoneTotalNodes, ...regionTotalNodes, grandTotalNode];
+        const allNodes = [...nodes, ...allOverlayNodes];
+
+        // ===== 3. RENDER NODES =====
+        const node = g.selectAll('g.node')
+            .data(allNodes, d => d.id || (d.id = ++i));
+
+        const nodeEnter = node.enter().append('g')
+            .attr('class', 'node')
+            .attr('transform', d => `translate(${source.x0 ?? source.x ?? 0},${source.y0 ?? source.y ?? 0})`)
+            .on('click', (event, d) => {
+                if (d.isOverlay) return;
+                if (d.children) {
+                    d._children = d.children;
+                    d.children = null;
+                } else if (d._children) {
+                    d.children = d._children;
+                    d._children = null;
+                } else {
+                    return;
+                }
+                update(d);
+            });
+
+        nodeEnter.each(function (d) {
+            renderNodeContent(d3.select(this), d);
         });
 
         const nodeUpdate = nodeEnter.merge(node);
-        nodeUpdate.transition().duration(duration).attr('transform', d => `translate(${d.x},${d.y})`);
+        nodeUpdate.transition().duration(duration)
+            .attr('transform', d => `translate(${d.x},${d.y})`);
 
-        const nodeExit = node.exit().transition().duration(duration)
+        node.exit().transition().duration(duration)
             .attr('transform', d => `translate(${source.x},${source.y})`)
+            .style('opacity', 0)
             .remove();
-        nodeExit.style('opacity', 0);
 
-        // LINKS
+        // ===== 4. RENDER MAIN LINKS =====
         const link = g.selectAll('path.link')
             .data(links, d => d.target.id);
 
-        const linkEnter = link.enter().insert('path', "g")
+        const linkEnter = link.enter().insert('path', 'g.node')
             .attr('class', 'link')
             .attr('d', d => {
-                const o = { x: source.x0, y: source.y0 };
+                const o = { x: source.x0 ?? source.x, y: source.y0 ?? source.y };
                 return `M ${o.x} ${o.y} C ${o.x} ${o.y}, ${o.x} ${o.y}, ${o.x} ${o.y}`;
             });
 
-        const linkUpdate = linkEnter.merge(link);
-        linkUpdate.transition().duration(duration)
+        linkEnter.merge(link).transition().duration(duration)
             .attr('d', d => {
                 const sourceH = getNodeSize(d.source).height;
                 const sx = d.source.x, sy = d.source.y + sourceH;
                 const tx = d.target.x, ty = d.target.y;
-                return `M ${sx} ${sy} C ${sx} ${(sy + ty)/2}, ${tx} ${(sy + ty)/2}, ${tx} ${ty}`;
+                return `M ${sx} ${sy} C ${sx} ${(sy + ty) / 2}, ${tx} ${(sy + ty) / 2}, ${tx} ${ty}`;
             })
             .attr('class', d => d.target.data.type === 'sampled-leaf' ? 'link link-sampled' : 'link');
 
@@ -834,72 +803,96 @@
             })
             .remove();
 
-        nodes.forEach(d => { d.x0 = d.x; d.y0 = d.y; });
+        // ===== 5. RENDER CONVERGENCE LINKS =====
+        const convergeLinks = [];
 
-        // Draw the requested bottom Grand Total and convergence lines.
-        const bottomGroup = g.selectAll('g.bottom-grand-total')
-            .data([root], d => d.id + '-bottom');
-
-        const bottomEnter = bottomGroup.enter().append('g')
-            .attr('class', 'bottom-grand-total')
-            .style('cursor', 'default');
-
-        const bottomMerged = bottomEnter.merge(bottomGroup);
-        const bottomSize = { width: 360, height: 115 };
-        bottomMerged.attr('transform', `translate(${bottomX},${bottomY})`);
-
-        bottomMerged.selectAll('*').remove();
-        bottomMerged.append('rect')
-            .attr('class', 'card-bg')
-            .attr('x', -bottomSize.width / 2)
-            .attr('y', 0)
-            .attr('width', bottomSize.width)
-            .attr('height', bottomSize.height)
-            .attr('fill', '#eef2ff')
-            .attr('stroke', '#4338ca')
-            .attr('stroke-width', 2);
-        bottomMerged.append('rect')
-            .attr('x', -bottomSize.width / 2)
-            .attr('y', 0)
-            .attr('width', bottomSize.width)
-            .attr('height', 6)
-            .attr('rx', 3)
-            .attr('fill', '#4f46e5');
-
-        const bs = root.data.summary;
-        const bfo = bottomMerged.append('foreignObject')
-            .attr('x', -bottomSize.width / 2)
-            .attr('y', 6)
-            .attr('width', bottomSize.width)
-            .attr('height', bottomSize.height - 6);
-        bfo.append('xhtml:div')
-            .style('width', '100%')
-            .style('height', '100%')
-            .style('padding', '8px 12px')
-            .style('text-align', 'center')
-            .html(`
-                <div class="font-bold text-base text-indigo-900">GRAND TOTAL</div>
-                <div class="grid grid-cols-2 gap-1.5 mt-1.5 text-[10px]">
-                    <div class="bg-indigo-50 border border-indigo-200 rounded py-1 px-1.5 text-indigo-900"><strong>Woredas:</strong> ${formatNumber(bs.selectedWoredas)} / ${formatNumber(bs.totalWoredas)}</div>
-                    <div class="bg-emerald-50 border border-emerald-200 rounded py-1 px-1.5 text-emerald-900"><strong>Kebeles:</strong> ${formatNumber(bs.selectedKebeles)} / ${formatNumber(bs.totalKebeles)}</div>
-                </div>
-                <div class="mt-1.5 bg-indigo-600 text-white rounded py-1 px-2 text-[10.5px] font-bold shadow-sm">Grand Total Sample Size: ${formatNumber(bs.totalSampleSize)}</div>
-            `);
-
-        // Converge each Region Total into one vertical line leading to the
-        // bottom Grand Total, as in the requested diagram.
-        const convergence = g.selectAll('path.grand-convergence')
-            .data(regionTotals, d => d.id);
-        convergence.enter().insert('path', 'g.bottom-grand-total')
-            .attr('class', 'grand-convergence')
-            .merge(convergence)
-            .attr('d', d => {
-                const sx = d.x;
-                const sy = d.y + getNodeSize(d).height;
-                const midY = bottomY - 35;
-                return `M ${sx} ${sy} C ${sx} ${midY}, ${bottomX} ${midY}, ${bottomX} ${bottomY}`;
+        // Woreda tables → Mining totals
+        miningTotalNodes.forEach(mt => {
+            const tableChild = (mt.parentMining.children || []).find(c => c.data.type === 'woreda-table-node');
+            const sourceNode = tableChild || mt.parentMining;
+            convergeLinks.push({
+                id: 'conv-' + mt.id,
+                source: { x: sourceNode.x, y: sourceNode.y + getNodeSize(sourceNode).height },
+                target: { x: mt.x, y: mt.y }
             });
-        convergence.exit().remove();
+        });
+
+        // Mining totals → Zone totals
+        zoneTotalNodes.forEach(zt => {
+            const childMiningTotals = miningTotalNodes.filter(mt => isDescendantOf(mt.parentMining, zt.parentZone));
+            if (childMiningTotals.length === 0) {
+                convergeLinks.push({
+                    id: 'conv-' + zt.id,
+                    source: { x: zt.parentZone.x, y: zt.parentZone.y + getNodeSize(zt.parentZone).height },
+                    target: { x: zt.x, y: zt.y }
+                });
+            } else {
+                childMiningTotals.forEach((mt, i) => {
+                    convergeLinks.push({
+                        id: `conv-${zt.id}-${i}`,
+                        source: { x: mt.x, y: mt.y + getNodeSize(mt).height },
+                        target: { x: zt.x, y: zt.y }
+                    });
+                });
+            }
+        });
+
+        // Zone totals → Region totals
+        regionTotalNodes.forEach(rt => {
+            const childZoneTotals = zoneTotalNodes.filter(zt => isDescendantOf(zt.parentZone, rt.parentRegion));
+            if (childZoneTotals.length === 0) {
+                convergeLinks.push({
+                    id: 'conv-' + rt.id,
+                    source: { x: rt.parentRegion.x, y: rt.parentRegion.y + getNodeSize(rt.parentRegion).height },
+                    target: { x: rt.x, y: rt.y }
+                });
+            } else {
+                childZoneTotals.forEach((zt, i) => {
+                    convergeLinks.push({
+                        id: `conv-${rt.id}-${i}`,
+                        source: { x: zt.x, y: zt.y + getNodeSize(zt).height },
+                        target: { x: rt.x, y: rt.y }
+                    });
+                });
+            }
+        });
+
+        // Region totals → Bottom Grand Total
+        regionTotalNodes.forEach((rt, i) => {
+            convergeLinks.push({
+                id: `conv-gt-${i}`,
+                source: { x: rt.x, y: rt.y + getNodeSize(rt).height },
+                target: { x: grandTotalNode.x, y: grandTotalNode.y }
+            });
+        });
+
+        const convLink = g.selectAll('path.conv-link')
+            .data(convergeLinks, d => d.id);
+
+        const convEnter = convLink.enter().insert('path', 'g.node')
+            .attr('class', 'conv-link')
+            .attr('fill', 'none')
+            .attr('stroke', '#94a3b8')
+            .attr('stroke-width', 1.8)
+            .attr('stroke-dasharray', '5 4')
+            .attr('opacity', 0.85)
+            .attr('d', d => {
+                const o = { x: source.x0 ?? source.x, y: source.y0 ?? source.y };
+                return `M ${o.x} ${o.y} C ${o.x} ${o.y}, ${o.x} ${o.y}, ${o.x} ${o.y}`;
+            });
+
+        convEnter.merge(convLink).transition().duration(duration)
+            .attr('d', d => {
+                const sx = d.source.x, sy = d.source.y;
+                const tx = d.target.x, ty = d.target.y;
+                return `M ${sx} ${sy} C ${sx} ${(sy + ty) / 2}, ${tx} ${(sy + ty) / 2}, ${tx} ${ty}`;
+            });
+
+        convLink.exit().transition().duration(duration).style('opacity', 0).remove();
+
+        // ===== 6. STORE POSITIONS =====
+        nodes.forEach(d => { d.x0 = d.x; d.y0 = d.y; });
+        allOverlayNodes.forEach(d => { d.x0 = d.x; d.y0 = d.y; });
     }
 </script>
 </body>
