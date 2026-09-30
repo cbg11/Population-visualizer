@@ -27,6 +27,7 @@
         
         .link { fill: none; stroke: #94a3b8; stroke-width: 2; transition: stroke 0.25s; }
         .link-sampled { stroke: #10b981 !important; stroke-width: 2px; stroke-dasharray: 5 5; }
+        .grand-convergence { fill: none; stroke: #94a3b8; stroke-width: 2; }
         .total-node-label { font-weight: 800; }
 
         
@@ -337,40 +338,34 @@
             };
         };
 
-        let rootData;
-        if (regionKeys.length === 1) {
-            rootData = buildRegionNode(regionKeys[0]);
-        } else {
-            const regionNodes = regionKeys.map(buildRegionNode);
-            let grandTotalWoredas = 0, grandSelectedWoredas = 0, grandTotalKebeles = 0, grandSelectedKebeles = 0, grandTotalSampleSize = 0;
+        const regionNodes = regionKeys.map(buildRegionNode);
+        let grandTotalWoredas = 0, grandSelectedWoredas = 0, grandTotalKebeles = 0, grandSelectedKebeles = 0, grandTotalSampleSize = 0;
 
-            regionNodes.forEach(r => {
-                grandTotalWoredas += r.summary.totalWoredas;
-                grandSelectedWoredas += r.summary.selectedWoredas;
-                grandTotalKebeles += r.summary.totalKebeles;
-                grandSelectedKebeles += r.summary.selectedKebeles;
-                grandTotalSampleSize += r.summary.totalSampleSize;
-            });
+        regionNodes.forEach(r => {
+            grandTotalWoredas += r.summary.totalWoredas;
+            grandSelectedWoredas += r.summary.selectedWoredas;
+            grandTotalKebeles += r.summary.totalKebeles;
+            grandSelectedKebeles += r.summary.selectedKebeles;
+            grandTotalSampleSize += r.summary.totalSampleSize;
+        });
 
-            const grandSummary = {
-                totalWoredas: grandTotalWoredas,
-                selectedWoredas: grandSelectedWoredas,
-                totalKebeles: grandTotalKebeles,
-                selectedKebeles: grandSelectedKebeles,
-                totalSampleSize: grandTotalSampleSize
-            };
+        const grandSummary = {
+            totalWoredas: grandTotalWoredas,
+            selectedWoredas: grandSelectedWoredas,
+            totalKebeles: grandTotalKebeles,
+            selectedKebeles: grandSelectedKebeles,
+            totalSampleSize: grandTotalSampleSize
+        };
 
-            regionNodes.push(
-                makeTotalNode('Grand Total', grandSummary, 'grand-total')
-            );
-
-            rootData = {
-                name: "All Regions Overview",
-                type: 'root',
-                summary: grandSummary,
-                children: regionNodes
-            };
-        }
+        // The top Grand Total is the actual hierarchy root.
+        // A second Grand Total is rendered at the bottom as a visual
+        // summary/convergence node, matching the requested diagram.
+        const rootData = {
+            name: 'Grand Total',
+            type: 'grand-total',
+            summary: grandSummary,
+            children: regionNodes
+        };
 
         document.getElementById('placeholder').style.display = 'none';
         renderTree(rootData);
@@ -433,27 +428,85 @@
         root = d3.hierarchy(data, d => d.children);
         root.x0 = 0; root.y0 = 0;
 
-        if (root.children) {
-            root.children.forEach(collapse);
+        // Keep the main hierarchy expanded so the initial view matches the
+        // requested Region -> Zone -> Children -> TOTAL structure.
+        // Selected-kebele detail tables remain collapsed until clicked.
+        function collapseSampledDetails(d) {
+            if (!d.children) return;
+            d.children.forEach(child => {
+                if (child.data.type === 'woreda-table-node' && child.children) {
+                    child._children = child.children;
+                    child.children = null;
+                } else {
+                    collapseSampledDetails(child);
+                }
+            });
         }
+        collapseSampledDetails(root);
 
         update(root);
     }
 
     function update(source) {
-        const treeLayout = d3.tree().nodeSize([420, 120]);
+        const treeLayout = d3.tree().nodeSize([380, 100]);
         const treeData = treeLayout(root);
         const nodes = treeData.descendants();
         const links = treeData.links();
 
-        nodes.forEach(d => {
-            if (d.depth === 0) {
-                d.y = 0;
-            } else {
-                const parentSize = getNodeSize(d.parent);
-                d.y = d.parent.y + parentSize.height + 65;
+        // First use D3 for horizontal ordering, then place each TOTAL below
+        // all of its real children. This produces: children -> TOTAL.
+        const normalChildren = d => (d.children || []).filter(c => !['total', 'grand-total'].includes(c.data.type));
+        const totalChild = d => (d.children || []).find(c => c.data.type === 'total');
+
+        const placeSubtree = (d, y) => {
+            d.y = y;
+            const children = d.children || [];
+            const regular = normalChildren(d);
+            const total = totalChild(d);
+
+            if (!children.length) return d.y + getNodeSize(d).height;
+
+            const childY = y + getNodeSize(d).height + 65;
+            let subtreeBottom = y + getNodeSize(d).height;
+
+            regular.forEach(child => {
+                subtreeBottom = Math.max(subtreeBottom, placeSubtree(child, childY));
+            });
+
+            if (total) {
+                const totalY = subtreeBottom + 55;
+                total.x = regular.length
+                    ? d3.mean(regular, c => c.x)
+                    : d.x;
+                subtreeBottom = Math.max(subtreeBottom, placeSubtree(total, totalY));
             }
+
+            return subtreeBottom;
+        };
+
+        // Keep D3's x ordering while computing vertical placement from the
+        // actual subtree heights. Root is the top Grand Total.
+        const rootY = 0;
+        placeSubtree(root, rootY);
+
+        // Put the top Grand Total centrally above all regions.
+        if (root.children && root.children.length) {
+            root.x = d3.mean(root.children, c => c.x);
+        }
+
+        // The lower Grand Total is a visual convergence node, not a child in
+        // the hierarchy (otherwise it would appear beside the regions).
+        const regionTotals = [];
+        root.children?.forEach(region => {
+            const rt = (region.children || []).find(c => c.data.type === 'total');
+            if (rt) regionTotals.push(rt);
         });
+
+        const existingBottom = g.select('g.bottom-grand-total');
+        const bottomY = regionTotals.length
+            ? Math.max(...regionTotals.map(d => d.y + getNodeSize(d).height)) + 80
+            : 0;
+        const bottomX = root.x;
 
         // NODES
         const node = g.selectAll('g.node')
@@ -782,6 +835,71 @@
             .remove();
 
         nodes.forEach(d => { d.x0 = d.x; d.y0 = d.y; });
+
+        // Draw the requested bottom Grand Total and convergence lines.
+        const bottomGroup = g.selectAll('g.bottom-grand-total')
+            .data([root], d => d.id + '-bottom');
+
+        const bottomEnter = bottomGroup.enter().append('g')
+            .attr('class', 'bottom-grand-total')
+            .style('cursor', 'default');
+
+        const bottomMerged = bottomEnter.merge(bottomGroup);
+        const bottomSize = { width: 360, height: 115 };
+        bottomMerged.attr('transform', `translate(${bottomX},${bottomY})`);
+
+        bottomMerged.selectAll('*').remove();
+        bottomMerged.append('rect')
+            .attr('class', 'card-bg')
+            .attr('x', -bottomSize.width / 2)
+            .attr('y', 0)
+            .attr('width', bottomSize.width)
+            .attr('height', bottomSize.height)
+            .attr('fill', '#eef2ff')
+            .attr('stroke', '#4338ca')
+            .attr('stroke-width', 2);
+        bottomMerged.append('rect')
+            .attr('x', -bottomSize.width / 2)
+            .attr('y', 0)
+            .attr('width', bottomSize.width)
+            .attr('height', 6)
+            .attr('rx', 3)
+            .attr('fill', '#4f46e5');
+
+        const bs = root.data.summary;
+        const bfo = bottomMerged.append('foreignObject')
+            .attr('x', -bottomSize.width / 2)
+            .attr('y', 6)
+            .attr('width', bottomSize.width)
+            .attr('height', bottomSize.height - 6);
+        bfo.append('xhtml:div')
+            .style('width', '100%')
+            .style('height', '100%')
+            .style('padding', '8px 12px')
+            .style('text-align', 'center')
+            .html(`
+                <div class="font-bold text-base text-indigo-900">GRAND TOTAL</div>
+                <div class="grid grid-cols-2 gap-1.5 mt-1.5 text-[10px]">
+                    <div class="bg-indigo-50 border border-indigo-200 rounded py-1 px-1.5 text-indigo-900"><strong>Woredas:</strong> ${formatNumber(bs.selectedWoredas)} / ${formatNumber(bs.totalWoredas)}</div>
+                    <div class="bg-emerald-50 border border-emerald-200 rounded py-1 px-1.5 text-emerald-900"><strong>Kebeles:</strong> ${formatNumber(bs.selectedKebeles)} / ${formatNumber(bs.totalKebeles)}</div>
+                </div>
+                <div class="mt-1.5 bg-indigo-600 text-white rounded py-1 px-2 text-[10.5px] font-bold shadow-sm">Grand Total Sample Size: ${formatNumber(bs.totalSampleSize)}</div>
+            `);
+
+        // Converge each Region Total into one vertical line leading to the
+        // bottom Grand Total, as in the requested diagram.
+        const convergence = g.selectAll('path.grand-convergence')
+            .data(regionTotals, d => d.id);
+        convergence.enter().insert('path', 'g.bottom-grand-total')
+            .attr('class', 'grand-convergence')
+            .merge(convergence)
+            .attr('d', d => {
+                const sx = d.x;
+                const sy = d.y + getNodeSize(d).height;
+                const midY = bottomY - 35;
+                return `M ${sx} ${sy} C ${sx} ${midY}, ${bottomX} ${midY}, ${bottomX} ${bottomY}`;
+            });
+        convergence.exit().remove();
     }
 </script>
 </body>
