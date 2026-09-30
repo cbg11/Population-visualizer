@@ -274,7 +274,6 @@
 
         const regionNodes = regionKeys.map(buildRegionNode);
 
-        // Invisible root — no grand total at the top.
         const rootData = {
             name: 'Root',
             type: 'invisible-root',
@@ -300,9 +299,10 @@
             const height = 65 + (itemCount * 28);
             return { width, height };
         }
-        if (d.data.type === 'mining') return { width: 250, height: 85 };
-        if (d.data.type === 'zone') return { width: 280, height: 90 };
-        if (d.data.type === 'region') return { width: 360, height: 110 };
+        // Simplified parent cards (name-only)
+        if (d.data.type === 'mining') return { width: 220, height: 60 };
+        if (d.data.type === 'zone') return { width: 260, height: 65 };
+        if (d.data.type === 'region') return { width: 320, height: 75 };
         if (d.data.type === 'total') return { width: 320, height: 110 };
         return { width: 240, height: 60 };
     }
@@ -330,7 +330,6 @@
         root.x0 = 0;
         root.y0 = 0;
 
-        // No collapsing — tree is fixed and fully expanded.
         update(root);
     }
 
@@ -366,8 +365,8 @@
             .attr('rx', 2)
             .attr('fill', headerBg);
 
+        // ----- Region: name only -----
         if (d.data.type === 'region') {
-            const s = d.data.summary;
             const fo = group.append('foreignObject')
                 .attr('x', -cardWidth / 2)
                 .attr('y', 5)
@@ -375,20 +374,14 @@
                 .attr('height', cardHeight - 5);
             fo.append('xhtml:div')
                 .style('width', '100%').style('height', '100%')
-                .style('padding', '14px 12px').style('text-align', 'center')
-                .html(`
-                    <div class="font-bold text-base text-slate-800">${d.data.name}</div>
-                    <div class="mt-1.5 grid grid-cols-2 gap-1 text-[9px]">
-                        <div class="bg-slate-50 rounded py-1 px-1 text-slate-700">
-                            <strong>Woredas</strong><br>${formatNumber(s.selectedWoredas)} / ${formatNumber(s.totalWoredas)}
-                        </div>
-                        <div class="bg-slate-50 rounded py-1 px-1 text-slate-700">
-                            <strong>Kebeles</strong><br>${formatNumber(s.selectedKebeles)} / ${formatNumber(s.totalKebeles)}
-                        </div>
-                    </div>
-                `);
-        } else if (d.data.type === 'zone') {
-            const s = d.data.summary;
+                .style('display', 'flex')
+                .style('align-items', 'center')
+                .style('justify-content', 'center')
+                .style('padding', '0 12px')
+                .html(`<div class="font-bold text-lg text-slate-800 text-center leading-tight">${d.data.name}</div>`);
+        }
+        // ----- Zone: name only -----
+        else if (d.data.type === 'zone') {
             const fo = group.append('foreignObject')
                 .attr('x', -cardWidth / 2)
                 .attr('y', 5)
@@ -396,20 +389,14 @@
                 .attr('height', cardHeight - 5);
             fo.append('xhtml:div')
                 .style('width', '100%').style('height', '100%')
-                .style('padding', '14px 12px').style('text-align', 'center')
-                .html(`
-                    <div class="font-bold text-sm text-slate-800">${d.data.name}</div>
-                    <div class="mt-1 grid grid-cols-2 gap-1 text-[9px]">
-                        <div class="bg-sky-50 rounded py-1 px-1 text-sky-800">
-                            <strong>Woredas</strong><br>${formatNumber(s.selectedWoredas)} / ${formatNumber(s.totalWoredas)}
-                        </div>
-                        <div class="bg-sky-50 rounded py-1 px-1 text-sky-800">
-                            <strong>Kebeles</strong><br>${formatNumber(s.selectedKebeles)} / ${formatNumber(s.totalKebeles)}
-                        </div>
-                    </div>
-                `);
-        } else if (d.data.type === 'mining') {
-            const s = d.data.summary;
+                .style('display', 'flex')
+                .style('align-items', 'center')
+                .style('justify-content', 'center')
+                .style('padding', '0 12px')
+                .html(`<div class="font-bold text-base text-slate-800 text-center leading-tight">${d.data.name}</div>`);
+        }
+        // ----- Mining: name only -----
+        else if (d.data.type === 'mining') {
             const fo = group.append('foreignObject')
                 .attr('x', -cardWidth / 2)
                 .attr('y', 5)
@@ -417,13 +404,14 @@
                 .attr('height', cardHeight - 5);
             fo.append('xhtml:div')
                 .style('width', '100%').style('height', '100%')
-                .style('padding', '20px 10px').style('text-align', 'center')
-                .html(`
-                    <div class="font-bold text-xs text-amber-900 uppercase tracking-wide">${d.data.name}</div>
-                    <div class="mt-1 text-[9px] text-amber-700">Woredas: ${formatNumber(s.totalWoredas)}</div>
-                    <div class="text-[9px] text-amber-700">Sample size: ${formatNumber(s.totalSampleSize)}</div>
-                `);
-        } else if (d.data.type === 'total') {
+                .style('display', 'flex')
+                .style('align-items', 'center')
+                .style('justify-content', 'center')
+                .style('padding', '0 12px')
+                .html(`<div class="font-bold text-sm text-amber-900 uppercase tracking-wide text-center leading-tight">${d.data.name}</div>`);
+        }
+        // ----- Totals: full summary -----
+        else if (d.data.type === 'total') {
             const fo = group.append('foreignObject')
                 .attr('x', -cardWidth / 2)
                 .attr('y', 5)
@@ -447,7 +435,9 @@
                         TOTAL SAMPLE SIZE: ${formatNumber(s.totalSampleSize)}
                     </div>
                 `);
-        } else if (d.data.type === 'woreda-table-node') {
+        }
+        // ----- Woreda table -----
+        else if (d.data.type === 'woreda-table-node') {
             const fo = group.append('foreignObject')
                 .attr('x', -cardWidth / 2)
                 .attr('y', 5)
@@ -512,7 +502,9 @@
 
             tableHtml += `</tbody></table>`;
             div.html(tableHtml);
-        } else if (d.data.type === 'sampled-leaf') {
+        }
+        // ----- Sampled leaf -----
+        else if (d.data.type === 'sampled-leaf') {
             const fo = group.append('foreignObject')
                 .attr('x', -cardWidth / 2)
                 .attr('y', 5)
@@ -576,7 +568,7 @@
             .separation((a, b) => {
                 const aW = getNodeSize(a).width;
                 const bW = getNodeSize(b).width;
-                const minSep = (aW + bW) / 2 + 60;
+                const minSep = (aW + bW) / 2 + 70;
                 return Math.max(1, minSep / 400);
             });
 
@@ -584,11 +576,11 @@
         const allTreeNodes = treeData.descendants();
         const allTreeLinks = treeData.links();
 
-        // Exclude invisible root from rendering.
         const nodes = allTreeNodes.filter(d => d.data.type !== 'invisible-root');
         const links = allTreeLinks.filter(d => d.source.data.type !== 'invisible-root');
 
-        // ===== 2. Y positions by depth =====
+        // ===== 2. Y positions by depth (increased vertical gap = 200) =====
+        const VERTICAL_GAP = 200;
         const levels = d3.group(nodes, d => d.depth);
         let cumulativeY = 0;
         const depthYMap = new Map();
@@ -597,7 +589,7 @@
             const levelNodes = levels.get(depth);
             if (levelNodes && levelNodes.length) {
                 const maxH = d3.max(levelNodes, d => getNodeSize(d).height);
-                cumulativeY += maxH + 110;
+                cumulativeY += maxH + VERTICAL_GAP;
             }
         });
 
@@ -622,7 +614,7 @@
             ? d3.max(deepestLeaves, d => d.y + getNodeSize(d).height)
             : 0;
 
-        // ===== 4. Build overlay total nodes (the "sum branch") =====
+        // ===== 4. Build overlay total nodes (with more spacing) =====
         const miningNodes = nodes.filter(d => d.data.type === 'mining');
         const zoneNodes = nodes.filter(d => d.data.type === 'zone');
         const regionNodes = nodes.filter(d => d.data.type === 'region');
@@ -636,8 +628,8 @@
             return false;
         }
 
-        // Mining totals — centered beneath the deepest leaves of each mining.
-        const miningTotalY = leafBottom + 110;
+        // Mining totals — beneath the deepest leaves of each mining.
+        const miningTotalY = leafBottom + 200;
         const miningTotalNodes = miningNodes.map(m => {
             const leaves = getDeepestLeaves(m);
             const x = leaves.length ? d3.mean(leaves, d => d.x) : m.x;
@@ -657,7 +649,7 @@
         });
 
         // Zone totals — beneath mining totals.
-        const zoneTotalY = miningTotalY + 165;
+        const zoneTotalY = miningTotalY + 220;
         const zoneTotalNodes = zoneNodes.map(z => {
             const childMiningTotals = miningTotalNodes.filter(mt => isDescendantOf(mt.parentMining, z));
             const x = childMiningTotals.length ? d3.mean(childMiningTotals, d => d.x) : z.x;
@@ -677,7 +669,7 @@
         });
 
         // Region totals — beneath zone totals.
-        const regionTotalY = zoneTotalY + 175;
+        const regionTotalY = zoneTotalY + 240;
         const regionTotalNodes = regionNodes.map(r => {
             const childZoneTotals = zoneTotalNodes.filter(zt => isDescendantOf(zt.parentZone, r));
             const x = childZoneTotals.length ? d3.mean(childZoneTotals, d => d.x) : r.x;
@@ -706,8 +698,6 @@
         const nodeEnter = node.enter().append('g')
             .attr('class', 'node')
             .attr('transform', d => `translate(${source.x0 ?? source.x ?? 0},${source.y0 ?? source.y ?? 0})`);
-
-        // No click handler — tree is fixed.
 
         nodeEnter.each(function (d) {
             renderNodeContent(d3.select(this), d);
